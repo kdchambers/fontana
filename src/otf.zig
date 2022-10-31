@@ -7,6 +7,14 @@ const bigToNative = std.mem.bigToNative;
 const eql = std.mem.eql;
 const assert = std.debug.assert;
 
+const graphics = @import("graphics.zig");
+
+const Bitmap = struct {
+    width: u32,
+    height: u32,
+    pixels: []graphics.RGBA(f32),
+};
+
 pub const FontType = enum {
     none,
     truetype_1,
@@ -642,4 +650,41 @@ fn findGlyphIndex(font_info: FontInfo, unicode_codepoint: i32) u32 {
 
         return @intCast(u32, toNative(u16, result_addr_aligned.*, .Big));
     }
+}
+
+fn createGlyphBitmap(allocator: Allocator, info: FontInfo, scale: f32, glyph_index: i32) !Bitmap {
+    const vertices = try getGlyphShape(allocator, info, glyph_index);
+    defer allocator.free(vertices);
+
+    const bounding_box = try getGlyphBoundingBox(info, glyph_index);
+    const bounding_box_scaled = BoundingBox(i32){
+        .x0 = @floatToInt(i32, @floor(@intToFloat(f64, bounding_box.x0) * scale)),
+        .y0 = @floatToInt(i32, @floor(@intToFloat(f64, bounding_box.y0) * scale)),
+        .x1 = @floatToInt(i32, @ceil(@intToFloat(f64, bounding_box.x1) * scale)),
+        .y1 = @floatToInt(i32, @ceil(@intToFloat(f64, bounding_box.y1) * scale)),
+    };
+
+    std.debug.assert(bounding_box.y1 >= bounding_box.y0);
+    for (vertices) |*vertex| {
+        vertex.x -= @intCast(i16, bounding_box.x0);
+        vertex.y -= @intCast(i16, bounding_box.y0);
+        if (@intToEnum(VMove, vertex.kind) == .curve) {
+            vertex.control1_x -= @intCast(i16, bounding_box.x0);
+            vertex.control1_y -= @intCast(i16, bounding_box.y0);
+        }
+    }
+    const dimensions = Dimensions2D(u32){
+        .width = @intCast(u32, bounding_box_scaled.x1 - bounding_box_scaled.x0),
+        .height = @intCast(u32, bounding_box_scaled.y1 - bounding_box_scaled.y0),
+    };
+
+    var bitmap = Bitmap{
+        .width = dimensions.width,
+        .height = dimensions.height,
+        .pixels = undefined,
+    };
+
+    // TODO: Implement rasterizer
+    // bitmap.pixels = try rasterize(allocator, dimensions, vertices, scale.x);
+    return bitmap;
 }
