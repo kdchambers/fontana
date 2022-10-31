@@ -28,10 +28,14 @@ See this compilable-ish example of how to use fontana to load some glyphs from a
         const scale = fontana.scaleForPixelHeight(font, font_size_pixels);
 
         const char_list = "abc";
-        for(char_list) |char| {
+        for (char_list) |char| {
             const bitmap = try fontana.createGlyphBitmap(allocator, font, scale, char);
             defer allocator.free(bitmap.pixels);
-            std.log.info("Loaded bitmap of '{c}' with dimensions: ({d}, {d})", .{ char, bitmap.width, bitmap.height});
+            std.log.info("Loaded bitmap of '{c}' with dimensions: ({d}, {d})", .{
+                char,
+                bitmap.width,
+                bitmap.height,
+            });
 
             //
             // Do something with the image bitmap
