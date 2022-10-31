@@ -7,7 +7,13 @@ const bigToNative = std.mem.bigToNative;
 const eql = std.mem.eql;
 const assert = std.debug.assert;
 
+const geometry = @import("geometry.zig");
 const graphics = @import("graphics.zig");
+const rasterizer = @import("rasterizer.zig");
+
+const Outline = rasterizer.Outline;
+const OutlineSegment = rasterizer.OutlineSegment;
+const Point = geometry.Point;
 
 const Bitmap = struct {
     width: u32,
@@ -356,6 +362,12 @@ pub const FontInfo = struct {
     index_to_loc_format: i32 = 0,
     cmap_encoding_table_offset: u32 = 0,
 // zig fmt: on
+};
+
+const Buffer = struct {
+    data: []u8 = undefined,
+    cursor: u32 = 0,
+    size: u32 = 0,
 };
 
 pub fn parseOTF(font_data: []u8) !FontInfo {
@@ -710,9 +722,7 @@ fn parseGlyfTableIndexForGlyph(font: FontInfo, glyph_index: i32) !usize {
 
 fn calculateGlyphBoundingBox(font: FontInfo, glyph_index: i32) !geometry.BoundingBox(i32) {
     std.debug.assert(font.cff.size == 0);
-    const section_index: usize = parseGlyfTableIndexForGlyph(font, glyph_index) catch |err| {
-        return error.GetGlyfOffsetFailed;
-    };
+    const section_index: usize = try parseGlyfTableIndexForGlyph(font, glyph_index);
     const base_index: usize = @ptrToInt(font.data.ptr) + section_index;
     return geometry.BoundingBox(i32){
         .x0 = bigToNative(i16, @intToPtr(*i16, base_index + 2).*), // min_x
@@ -732,11 +742,11 @@ fn calculateGlyphBoundingBoxScaled(font: FontInfo, glyph_index: i32, scale: f64)
     };
 }
 
-fn createGlyphBitmap(allocator: Allocator, info: FontInfo, scale: f32, glyph_index: i32) !Bitmap {
+fn createGlyphBitmap(allocator: std.mem.Allocator, info: FontInfo, scale: f32, glyph_index: i32) !Bitmap {
     const vertices: []Vertex = try loadGlyphVertices(allocator, info, glyph_index);
     defer allocator.free(vertices);
 
-    const bounding_box = try getGlyphBoundingBox(info, glyph_index);
+    const bounding_box = try calculateGlyphBoundingBox(info, glyph_index);
     const bounding_box_scaled = geometry.BoundingBox(i32){
         .x0 = @floatToInt(i32, @floor(@intToFloat(f64, bounding_box.x0) * scale)),
         .y0 = @floatToInt(i32, @floor(@intToFloat(f64, bounding_box.y0) * scale)),
@@ -753,7 +763,7 @@ fn createGlyphBitmap(allocator: Allocator, info: FontInfo, scale: f32, glyph_ind
             vertex.control1_y -= @intCast(i16, bounding_box.y0);
         }
     }
-    const dimensions = Dimensions2D(u32){
+    const dimensions = geometry.Dimensions2D(u32){
         .width = @intCast(u32, bounding_box_scaled.x1 - bounding_box_scaled.x0),
         .height = @intCast(u32, bounding_box_scaled.y1 - bounding_box_scaled.y0),
     };
@@ -764,7 +774,10 @@ fn createGlyphBitmap(allocator: Allocator, info: FontInfo, scale: f32, glyph_ind
         .pixels = undefined,
     };
 
-    bitmap.pixels = try rasterize(allocator, dimensions, vertices, scale.x);
+    const outlines = try createOutlines(allocator, vertices, @intToFloat(f64, dimensions.height), scale);
+    defer allocator.free(outlines);
+
+    bitmap.pixels = try rasterizer.rasterize(allocator, dimensions, outlines);
     return bitmap;
 }
 
@@ -843,7 +856,7 @@ pub fn getRequiredDimensions(font: FontInfo, codepoint: i32, scale: f64) !geomet
     };
 }
 
-fn loadGlyphVertices(allocator: Allocator, font: FontInfo, glyph_index: i32) ![]Vertex {
+fn loadGlyphVertices(allocator: std.mem.Allocator, font: FontInfo, glyph_index: i32) ![]Vertex {
     if (font.cff.size != 0) {
         return error.CffFound;
     }
@@ -860,7 +873,7 @@ fn loadGlyphVertices(allocator: Allocator, font: FontInfo, glyph_index: i32) ![]
     var glyph_dimensions: geometry.Dimensions2D(u32) = undefined;
 
     // Find the byte offset of the glyh table
-    const glyph_offset = try getGlyfOffset(font, glyph_index);
+    const glyph_offset = try parseGlyfTableIndexForGlyph(font, glyph_index);
     const glyph_offset_index: usize = @ptrToInt(data.ptr) + glyph_offset;
 
     if (glyph_offset < 0) {
@@ -1071,4 +1084,96 @@ fn loadGlyphVertices(allocator: Allocator, font: FontInfo, glyph_index: i32) ![]
     }
 
     return allocator.shrink(vertices, vertices_count);
+}
+
+/// Converts array of Vertex into array of Outline (Our own format)
+/// Applies Y flip and scaling
+fn createOutlines(allocator: std.mem.Allocator, vertices: []Vertex, height: f64, scale: f32) ![]Outline {
+    // TODO:
+    std.debug.assert(@intToEnum(VMove, vertices[0].kind) == .move);
+
+    var outline_segment_lengths = [1]u32{0} ** 32;
+    const outline_count: u32 = blk: {
+        var count: u32 = 0;
+        for (vertices[1..]) |vertex| {
+            if (@intToEnum(VMove, vertex.kind) == .move) {
+                count += 1;
+                continue;
+            }
+            outline_segment_lengths[count] += 1;
+        }
+        break :blk count + 1;
+    };
+
+    var outlines = try allocator.alloc(Outline, outline_count);
+    {
+        var i: u32 = 0;
+        while (i < outline_count) : (i += 1) {
+            outlines[i].segments = try allocator.alloc(OutlineSegment, outline_segment_lengths[i]);
+        }
+    }
+
+    {
+        var vertex_index: u32 = 1;
+        var outline_index: u32 = 0;
+        var outline_segment_index: u32 = 0;
+        while (vertex_index < vertices.len) {
+            switch (@intToEnum(VMove, vertices[vertex_index].kind)) {
+                .move => {
+                    vertex_index += 1;
+                    outline_index += 1;
+                    outline_segment_index = 0;
+                },
+                .line => {
+                    const from = vertices[vertex_index - 1];
+                    const to = vertices[vertex_index];
+                    const point_from = Point(f64){ .x = @intToFloat(f64, from.x) * scale, .y = height - (@intToFloat(f64, from.y) * scale) };
+                    const point_to = Point(f64){ .x = @intToFloat(f64, to.x) * scale, .y = height - (@intToFloat(f64, to.y) * scale) };
+                    const dist = geometry.distanceBetweenPoints(point_from, point_to);
+                    outlines[outline_index].segments[outline_segment_index] = OutlineSegment{
+                        .from = point_from,
+                        .to = point_to,
+                        .t_per_pixel = 1.0 / dist,
+                    };
+                    vertex_index += 1;
+                    outline_segment_index += 1;
+                },
+                .curve => {
+                    const from = vertices[vertex_index - 1];
+                    const to = vertices[vertex_index];
+                    const point_from = Point(f64){ .x = @intToFloat(f64, from.x) * scale, .y = height - (@intToFloat(f64, from.y) * scale) };
+                    const point_to = Point(f64){ .x = @intToFloat(f64, to.x) * scale, .y = height - (@intToFloat(f64, to.y) * scale) };
+                    var segment_ptr: *OutlineSegment = &outlines[outline_index].segments[outline_segment_index];
+                    segment_ptr.* = OutlineSegment{
+                        .from = point_from,
+                        .to = point_to,
+                        .t_per_pixel = undefined,
+                        .control_opt = Point(f64){
+                            .x = @intToFloat(f64, to.control1_x) * scale,
+                            .y = height - (@intToFloat(f64, to.control1_y) * scale),
+                        },
+                    };
+                    const outline_length_pixels: f64 = blk: {
+                        //
+                        // Approximate length of bezier curve
+                        //
+                        var i: usize = 1;
+                        var accumulator: f64 = 0;
+                        var point_previous = point_from;
+                        while (i <= 10) : (i += 1) {
+                            const point_sampled = segment_ptr.sample(@intToFloat(f64, i) * 0.1);
+                            accumulator += geometry.distanceBetweenPoints(point_previous, point_sampled);
+                        }
+                        break :blk accumulator;
+                    };
+                    segment_ptr.t_per_pixel = (1.0 / outline_length_pixels);
+                    vertex_index += 1;
+                    outline_segment_index += 1;
+                },
+                // TODO:
+                else => unreachable,
+            }
+        }
+    }
+    return outlines;
 }
