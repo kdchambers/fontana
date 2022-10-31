@@ -724,7 +724,7 @@ fn calculateGlyphBoundingBox(font: FontInfo, glyph_index: i32) !geometry.Boundin
 
 fn calculateGlyphBoundingBoxScaled(font: FontInfo, glyph_index: i32, scale: f64) !geometry.BoundingBox(i32) {
     const unscaled = try calculateGlyphBoundingBox(font, glyph_index);
-    return geometry.BoundingBox(i32) {
+    return geometry.BoundingBox(i32){
         .x0 = @floatToInt(i32, @floor(@intToFloat(f64, unscaled.x0) * scale.x)),
         .y0 = @floatToInt(i32, @floor(@intToFloat(f64, unscaled.y0) * scale.y)),
         .x1 = @floatToInt(i32, @ceil(@intToFloat(f64, unscaled.x1) * scale.x)),
@@ -764,8 +764,7 @@ fn createGlyphBitmap(allocator: Allocator, info: FontInfo, scale: f32, glyph_ind
         .pixels = undefined,
     };
 
-    // TODO: Implement rasterizer
-    // bitmap.pixels = try rasterize(allocator, dimensions, vertices, scale.x);
+    bitmap.pixels = try rasterize(allocator, dimensions, vertices, scale.x);
     return bitmap;
 }
 
