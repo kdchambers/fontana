@@ -19,6 +19,18 @@ pub const FontType = enum {
 const FWORD = i16;
 const UFWORD = u16;
 
+const GlyhHeader = extern struct {
+    // See: https://docs.microsoft.com/en-us/typography/opentype/spec/glyf
+    //
+    //  If the number of contours is greater than or equal to zero, this is a simple glyph.
+    //  If negative, this is a composite glyph — the value -1 should be used for composite glyphs.
+    contour_count: i16,
+    x_minimum: i16,
+    y_minimum: i16,
+    x_maximum: i16,
+    y_maximum: i16,
+};
+
 pub const TableHHEA = struct {
     const index = struct {
         const major_version = 0;
@@ -284,6 +296,20 @@ pub const DataSections = struct {
     name: SectionRange = .{},
 };
 
+const TableType = enum { cmap, loca, head, glyf, hhea, hmtx, kern, gpos, maxp };
+
+const TableTypeList: [9]*const [4:0]u8 = .{
+    "cmap",
+    "loca",
+    "head",
+    "glyf",
+    "hhea",
+    "hmtx",
+    "kern",
+    "GPOS",
+    "maxp",
+};
+
 //
 // https://docs.microsoft.com/en-us/typography/opentype/spec/glyf
 //
@@ -303,3 +329,317 @@ pub const GlyphFlags = struct {
         return (value & flag) != 0;
     }
 };
+
+pub const FontInfo = struct {
+    // zig fmt: off
+    data: []u8,
+    glyph_count: i32 = 0,
+    loca: SectionRange = .{},
+    head: SectionRange = .{},
+    glyf: SectionRange = .{},
+    hhea: SectionRange = .{},
+    hmtx: SectionRange = .{},
+    kern: SectionRange = .{},
+    gpos: SectionRange = .{},
+    svg: SectionRange = .{},
+    maxp: SectionRange = .{},
+    cff: Buffer = .{},
+    index_map: i32 = 0,
+    index_to_loc_format: i32 = 0,
+    cmap_encoding_table_offset: u32 = 0,
+// zig fmt: on
+};
+
+pub fn parseOTF(font_data: []u8) !FontInfo {
+    var data_sections = DataSections{};
+    {
+        var fixed_buffer_stream = std.io.FixedBufferStream([]const u8){ .buffer = font_data, .pos = 0 };
+        var reader = fixed_buffer_stream.reader();
+
+        const scaler_type = try reader.readIntBig(u32);
+        const tables_count = try reader.readIntBig(u16);
+        const search_range = try reader.readIntBig(u16);
+        const entry_selector = try reader.readIntBig(u16);
+        const range_shift = try reader.readIntBig(u16);
+
+        _ = scaler_type;
+        _ = search_range;
+        _ = entry_selector;
+        _ = range_shift;
+
+        var i: usize = 0;
+        while (i < tables_count) : (i += 1) {
+            var tag_buffer: [4]u8 = undefined;
+            var tag = tag_buffer[0..];
+            _ = try reader.readAll(tag[0..]);
+            const checksum = try reader.readIntBig(u32);
+            // TODO: Use checksum
+            _ = checksum;
+            const offset = try reader.readIntBig(u32);
+            const length = try reader.readIntBig(u32);
+
+            std.debug.print("{d:2}.    {s}\n", .{ i + 1, tag });
+
+            if (std.mem.eql(u8, "cmap", tag)) {
+                data_sections.cmap.offset = offset;
+                data_sections.cmap.length = length;
+                continue;
+            }
+
+            if (std.mem.eql(u8, "DSIG", tag)) {
+                data_sections.dsig.offset = offset;
+                data_sections.dsig.length = length;
+                continue;
+            }
+
+            if (std.mem.eql(u8, "loca", tag)) {
+                data_sections.loca.offset = offset;
+                data_sections.loca.length = length;
+                continue;
+            }
+
+            if (std.mem.eql(u8, "head", tag)) {
+                data_sections.head.offset = offset;
+                data_sections.head.length = length;
+                continue;
+            }
+
+            if (std.mem.eql(u8, "hvar", tag)) {
+                data_sections.hvar.offset = offset;
+                data_sections.hvar.length = length;
+                continue;
+            }
+
+            if (std.mem.eql(u8, "glyf", tag)) {
+                data_sections.glyf.offset = offset;
+                data_sections.glyf.length = length;
+                continue;
+            }
+
+            if (std.mem.eql(u8, "hhea", tag)) {
+                data_sections.hhea.offset = offset;
+                data_sections.hhea.length = length;
+                continue;
+            }
+
+            if (std.mem.eql(u8, "hmtx", tag)) {
+                data_sections.hmtx.offset = offset;
+                data_sections.hmtx.length = length;
+                continue;
+            }
+
+            if (std.mem.eql(u8, "kern", tag)) {
+                data_sections.kern.offset = offset;
+                data_sections.kern.length = length;
+                continue;
+            }
+
+            if (std.mem.eql(u8, "GPOS", tag)) {
+                data_sections.gpos.offset = offset;
+                data_sections.gpos.length = length;
+                continue;
+            }
+
+            if (std.mem.eql(u8, "maxp", tag)) {
+                data_sections.maxp.offset = offset;
+                data_sections.maxp.length = length;
+                continue;
+            }
+
+            if (std.mem.eql(u8, "name", tag)) {
+                data_sections.name.offset = offset;
+                data_sections.name.length = length;
+                continue;
+            }
+        }
+    }
+
+    var font_info = FontInfo{
+        .data = font_data,
+        .hhea = data_sections.hhea,
+        .loca = data_sections.loca,
+        .glyf = data_sections.glyf,
+    };
+
+    {
+        std.debug.assert(!data_sections.maxp.isNull());
+
+        var fixed_buffer_stream = std.io.FixedBufferStream([]const u8){ .buffer = font_data, .pos = data_sections.maxp.offset };
+        var reader = fixed_buffer_stream.reader();
+        const version_major = try reader.readIntBig(i16);
+        const version_minor = try reader.readIntBig(i16);
+        _ = version_major;
+        _ = version_minor;
+        font_info.glyph_count = try reader.readIntBig(u16);
+        std.log.info("Glyphs found: {d}", .{font_info.glyph_count});
+    }
+
+    var head: Head = undefined;
+    {
+        var fixed_buffer_stream = std.io.FixedBufferStream([]const u8){ .buffer = font_data, .pos = data_sections.head.offset };
+        var reader = fixed_buffer_stream.reader();
+
+        head.version_major = try reader.readIntBig(i16);
+        head.version_minor = try reader.readIntBig(i16);
+        head.font_revision_major = try reader.readIntBig(i16);
+        head.font_revision_minor = try reader.readIntBig(i16);
+        head.checksum_adjustment = try reader.readIntBig(u32);
+        head.magic_number = try reader.readIntBig(u32);
+
+        if (head.magic_number != 0x5F0F3CF5) {
+            std.log.warn("Magic number not set to 0x5F0F3CF5. File might be corrupt", .{});
+        }
+
+        head.flags = try reader.readStruct(Head.Flags);
+
+        head.units_per_em = try reader.readIntBig(u16);
+        head.created_timestamp = try reader.readIntBig(i64);
+        head.modified_timestamp = try reader.readIntBig(i64);
+
+        head.x_min = try reader.readIntBig(i16);
+        head.y_min = try reader.readIntBig(i16);
+        head.x_max = try reader.readIntBig(i16);
+        head.y_max = try reader.readIntBig(i16);
+
+        std.debug.assert(head.x_min <= head.x_max);
+        std.debug.assert(head.y_min <= head.y_max);
+
+        head.mac_style = try reader.readStruct(Head.MacStyle);
+
+        head.lowest_rec_ppem = try reader.readIntBig(u16);
+
+        head.font_direction_hint = try reader.readIntBig(i16);
+        head.index_to_loc_format = try reader.readIntBig(i16);
+        head.glyph_data_format = try reader.readIntBig(i16);
+
+        font_info.index_to_loc_format = head.index_to_loc_format;
+
+        std.debug.assert(font_info.index_to_loc_format == 0 or font_info.index_to_loc_format == 1);
+    }
+
+    font_info.cmap_encoding_table_offset = outer: {
+        std.debug.assert(!data_sections.cmap.isNull());
+
+        var fixed_buffer_stream = std.io.FixedBufferStream([]const u8){ .buffer = font_data, .pos = data_sections.cmap.offset };
+        var reader = fixed_buffer_stream.reader();
+
+        const version = try reader.readIntBig(u16);
+        const subtable_count = try reader.readIntBig(u16);
+
+        _ = version;
+
+        var i: usize = 0;
+        while (i < subtable_count) : (i += 1) {
+            comptime {
+                std.debug.assert(@sizeOf(CMAPPlatformID) == 2);
+                std.debug.assert(@sizeOf(CMAPPlatformSpecificID) == 2);
+            }
+            const platform_id = try reader.readEnum(CMAPPlatformID, .Big);
+            const platform_specific_id = blk: {
+                switch (platform_id) {
+                    .unicode => break :blk CMAPPlatformSpecificID{ .unicode = try reader.readEnum(CMAPPlatformSpecificID.Unicode, .Big) },
+                    else => return error.InvalidSpecificPlatformID,
+                }
+            };
+            _ = platform_specific_id;
+            const offset = try reader.readIntBig(u32);
+            std.log.info("Platform: {}", .{platform_id});
+            if (platform_id == .unicode) break :outer data_sections.cmap.offset + offset;
+        }
+        return error.InvalidPlatform;
+    };
+
+    return font_info;
+}
+
+fn fontType(font: []const u8) FontType {
+    const TrueType1Tag: [4]u8 = .{ 49, 0, 0, 0 };
+    const OpenTypeTag: [4]u8 = .{ 0, 1, 0, 0 };
+
+    if (eql(u8, font, TrueType1Tag[0..])) return .truetype_1; // TrueType 1
+    if (eql(u8, font, "typ1")) return .truetype_2; // TrueType with type 1 font -- we don't support this!
+    if (eql(u8, font, "OTTO")) return .opentype_cff; // OpenType with CFF
+    if (eql(u8, font, OpenTypeTag[0..])) return .opentype_1; // OpenType 1.0
+    if (eql(u8, font, "true")) return .apple; // Apple specification for TrueType fonts
+
+    return .none;
+}
+
+pub fn getFontOffsetForIndex(font_collection: []u8, index: i32) i32 {
+    const font_type = fontType(font_collection);
+    if (font_type == .none) {
+        return if (index == 0) 0 else -1;
+    }
+    return -1;
+}
+
+fn findGlyphIndex(font_info: FontInfo, unicode_codepoint: i32) u32 {
+    const data = font_info.data;
+    const encoding_offset = font_info.cmap_encoding_table_offset;
+
+    if (unicode_codepoint > 0xffff) {
+        std.log.info("Invalid codepoint", .{});
+        return 0;
+    }
+
+    const base_index: usize = @ptrToInt(data.ptr) + encoding_offset;
+    const format: u16 = bigToNative(u16, @intToPtr(*u16, base_index).*);
+
+    // TODO:
+    std.debug.assert(format == 4);
+
+    const segcount = toNative(u16, @intToPtr(*u16, base_index + 6).*, .Big) >> 1;
+    var search_range = toNative(u16, @intToPtr(*u16, base_index + 8).*, .Big) >> 1;
+    var entry_selector = toNative(u16, @intToPtr(*u16, base_index + 10).*, .Big);
+    const range_shift = toNative(u16, @intToPtr(*u16, base_index + 12).*, .Big) >> 1;
+
+    const end_count: u32 = encoding_offset + 14;
+    var search: u32 = end_count;
+
+    if (unicode_codepoint >= toNative(u16, @intToPtr(*u16, @ptrToInt(data.ptr) + search + (range_shift * 2)).*, .Big)) {
+        search += range_shift * 2;
+    }
+
+    search -= 2;
+
+    while (entry_selector != 0) {
+        var end: u16 = undefined;
+        search_range = search_range >> 1;
+
+        end = toNative(u16, @intToPtr(*u16, @ptrToInt(data.ptr) + search + (search_range * 2)).*, .Big);
+
+        if (unicode_codepoint > end) {
+            search += search_range * 2;
+        }
+        entry_selector -= 1;
+    }
+
+    search += 2;
+
+    {
+        var offset: u16 = undefined;
+        var start: u16 = undefined;
+        const item: u32 = (search - end_count) >> 1;
+
+        assert(unicode_codepoint <= toNative(u16, @intToPtr(*u16, @ptrToInt(data.ptr) + end_count + (item * 2)).*, .Big));
+        start = toNative(u16, @intToPtr(*u16, @ptrToInt(data.ptr) + encoding_offset + 14 + (segcount * 2) + 2 + (2 * item)).*, .Big);
+
+        if (unicode_codepoint < start) {
+            // TODO: return error
+            return 0;
+        }
+
+        offset = toNative(u16, @intToPtr(*u16, @ptrToInt(data.ptr) + encoding_offset + 14 + (segcount * 6) + 2 + (item * 2)).*, .Big);
+        if (offset == 0) {
+            const base = bigToNative(i16, @intToPtr(*i16, base_index + 14 + (segcount * 4) + 2 + (2 * item)).*);
+            return @intCast(u32, unicode_codepoint + base);
+        }
+
+        const result_addr_index = @ptrToInt(data.ptr) + offset + @intCast(usize, unicode_codepoint - start) * 2 + encoding_offset + 14 + (segcount * 6) + 2 + (2 * item);
+
+        const result_addr = @intToPtr(*u8, result_addr_index);
+        const result_addr_aligned = @ptrCast(*u16, @alignCast(2, result_addr));
+
+        return @intCast(u32, toNative(u16, result_addr_aligned.*, .Big));
+    }
+}
