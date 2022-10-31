@@ -581,6 +581,16 @@ pub fn getFontOffsetForIndex(font_collection: []u8, index: i32) i32 {
     return -1;
 }
 
+const Vertex = packed struct {
+    x: i16,
+    y: i16,
+    // Refer to control points for bezier curves
+    control1_x: i16,
+    control1_y: i16,
+    kind: u8,
+    is_active: u8 = 0,
+};
+
 fn findGlyphIndex(font_info: FontInfo, unicode_codepoint: i32) u32 {
     const data = font_info.data;
     const encoding_offset = font_info.cmap_encoding_table_offset;
@@ -652,12 +662,82 @@ fn findGlyphIndex(font_info: FontInfo, unicode_codepoint: i32) u32 {
     }
 }
 
+inline fn readBigEndian(comptime T: type, index: usize) T {
+    return bigToNative(T, @intToPtr(*T, index).*);
+}
+
+pub fn getAscent(font: FontInfo) i16 {
+    const offset = font.hhea.offset + TableHHEA.index.ascender;
+    return readBigEndian(i16, @ptrToInt(font.data.ptr) + offset);
+}
+
+pub fn getDescent(font: FontInfo) i16 {
+    const offset = font.hhea.offset + TableHHEA.index.descender;
+    return readBigEndian(i16, @ptrToInt(font.data.ptr) + offset);
+}
+
+fn parseGlyfTableIndexForGlyph(font: FontInfo, glyph_index: i32) !usize {
+    if (glyph_index >= font.glyph_count) return error.InvalidGlyphIndex;
+
+    if (font.index_to_loc_format != 0 and font.index_to_loc_format != 1) return error.InvalidIndexToLocationFormat;
+    const loca_start = @ptrToInt(font.data.ptr) + font.loca.offset;
+    const glyf_offset = @intCast(usize, font.glyf.offset);
+
+    var glyph_data_offset: usize = 0;
+    var next_glyph_data_offset: usize = 0;
+
+    // Use 16 or 32 bit offsets based on index_to_loc_format
+    // https://docs.microsoft.com/en-us/typography/opentype/spec/head
+    if (font.index_to_loc_format == 0) {
+        // Location values are stored as half the actual value.
+        // https://docs.microsoft.com/en-us/typography/opentype/spec/loca#short-version
+        const loca_table_offset: usize = loca_start + (@intCast(usize, glyph_index) * 2);
+        glyph_data_offset = glyf_offset + @intCast(u32, readBigEndian(u16, loca_table_offset + 0)) * 2;
+        next_glyph_data_offset = glyf_offset + @intCast(u32, readBigEndian(u16, loca_table_offset + 2)) * 2;
+    } else {
+        glyph_data_offset = glyf_offset + readBigEndian(u32, loca_start + (@intCast(usize, glyph_index) * 4) + 0);
+        next_glyph_data_offset = glyf_offset + readBigEndian(u32, loca_start + (@intCast(usize, glyph_index) * 4) + 4);
+    }
+
+    if (glyph_data_offset == next_glyph_data_offset) {
+        // https://docs.microsoft.com/en-us/typography/opentype/spec/loca
+        // If loca[n] == loca[n + 1], that means the glyph has no outline (E.g space character)
+        return error.GlyphHasNoOutline;
+    }
+
+    return glyph_data_offset;
+}
+
+fn calculateGlyphBoundingBox(font: FontInfo, glyph_index: i32) !geometry.BoundingBox(i32) {
+    std.debug.assert(font.cff.size == 0);
+    const section_index: usize = parseGlyfTableIndexForGlyph(font, glyph_index) catch |err| {
+        return error.GetGlyfOffsetFailed;
+    };
+    const base_index: usize = @ptrToInt(font.data.ptr) + section_index;
+    return geometry.BoundingBox(i32){
+        .x0 = bigToNative(i16, @intToPtr(*i16, base_index + 2).*), // min_x
+        .y0 = bigToNative(i16, @intToPtr(*i16, base_index + 4).*), // min_y
+        .x1 = bigToNative(i16, @intToPtr(*i16, base_index + 6).*), // max_x
+        .y1 = bigToNative(i16, @intToPtr(*i16, base_index + 8).*), // max_y
+    };
+}
+
+fn calculateGlyphBoundingBoxScaled(font: FontInfo, glyph_index: i32, scale: f64) !geometry.BoundingBox(i32) {
+    const unscaled = try calculateGlyphBoundingBox(font, glyph_index);
+    return geometry.BoundingBox(i32) {
+        .x0 = @floatToInt(i32, @floor(@intToFloat(f64, unscaled.x0) * scale.x)),
+        .y0 = @floatToInt(i32, @floor(@intToFloat(f64, unscaled.y0) * scale.y)),
+        .x1 = @floatToInt(i32, @ceil(@intToFloat(f64, unscaled.x1) * scale.x)),
+        .y1 = @floatToInt(i32, @ceil(@intToFloat(f64, unscaled.y1) * scale.y)),
+    };
+}
+
 fn createGlyphBitmap(allocator: Allocator, info: FontInfo, scale: f32, glyph_index: i32) !Bitmap {
-    const vertices = try getGlyphShape(allocator, info, glyph_index);
+    const vertices: []Vertex = try loadGlyphVertices(allocator, info, glyph_index);
     defer allocator.free(vertices);
 
     const bounding_box = try getGlyphBoundingBox(info, glyph_index);
-    const bounding_box_scaled = BoundingBox(i32){
+    const bounding_box_scaled = geometry.BoundingBox(i32){
         .x0 = @floatToInt(i32, @floor(@intToFloat(f64, bounding_box.x0) * scale)),
         .y0 = @floatToInt(i32, @floor(@intToFloat(f64, bounding_box.y0) * scale)),
         .x1 = @floatToInt(i32, @ceil(@intToFloat(f64, bounding_box.x1) * scale)),
@@ -687,4 +767,309 @@ fn createGlyphBitmap(allocator: Allocator, info: FontInfo, scale: f32, glyph_ind
     // TODO: Implement rasterizer
     // bitmap.pixels = try rasterize(allocator, dimensions, vertices, scale.x);
     return bitmap;
+}
+
+fn closeShape(
+    vertices: []Vertex,
+    vertices_count: u32,
+    was_off: bool,
+    start_off: bool,
+    sx: i32,
+    sy: i32,
+    scx: i32,
+    scy: i32,
+    control1_x: i32,
+    control1_y: i32,
+) u32 {
+    var vertices_count_local: u32 = vertices_count;
+
+    if (start_off) {
+        if (was_off) {
+            setVertex(&vertices[vertices_count_local], .curve, @divFloor(control1_x + scx, 2), @divFloor(control1_y + scy, 2), control1_x, control1_y);
+            vertices_count_local += 1;
+        }
+        setVertex(&vertices[vertices_count_local], .curve, sx, sy, scx, scy);
+        vertices_count_local += 1;
+    } else {
+        if (was_off) {
+            setVertex(&vertices[vertices_count_local], .curve, sx, sy, control1_x, control1_y);
+            vertices_count_local += 1;
+        } else {
+            setVertex(&vertices[vertices_count_local], .line, sx, sy, 0, 0);
+            vertices_count_local += 1;
+        }
+    }
+
+    return vertices_count_local;
+}
+
+fn setVertex(vertex: *Vertex, kind: VMove, x: i32, y: i32, control1_x: i32, control1_y: i32) void {
+    vertex.kind = @enumToInt(kind);
+    vertex.x = @intCast(i16, x);
+    vertex.y = @intCast(i16, y);
+    vertex.control1_x = @intCast(i16, control1_x);
+    vertex.control1_y = @intCast(i16, control1_y);
+}
+
+const VMove = enum(u8) {
+    none,
+    move = 1,
+    line,
+    curve,
+    cubic,
+};
+
+fn isFlagSet(value: u8, bit_mask: u8) bool {
+    return (value & bit_mask) != 0;
+}
+
+pub fn scaleForPixelHeight(info: FontInfo, height: f32) f32 {
+    assert(info.hhea.offset != 0);
+    const base_index: usize = @ptrToInt(info.data.ptr) + info.hhea.offset;
+    const first = bigToNative(i16, @intToPtr(*i16, (base_index + 4)).*); //ascender
+    const second = bigToNative(i16, @intToPtr(*i16, (base_index + 6)).*); // descender
+    std.log.info("Ascender: {d}, Descender: {d}", .{ first, second });
+    const fheight = @intToFloat(f32, first - second);
+    return height / fheight;
+}
+
+pub fn getRequiredDimensions(font: FontInfo, codepoint: i32, scale: f64) !geometry.Dimensions2D(u32) {
+    const glyph_index = @intCast(i32, findGlyphIndex(font, codepoint));
+    const bounding_box = calculateGlyphBoundingBoxScaled(font, glyph_index, scale);
+    std.debug.assert(bounding_box.x1 >= bounding_box.x0);
+    std.debug.assert(bounding_box.y1 >= bounding_box.y0);
+    return geometry.Dimensions2D(u32){
+        .width = @intCast(u32, bounding_box.x1 - bounding_box.x0),
+        .height = @intCast(u32, bounding_box.y1 - bounding_box.y0),
+    };
+}
+
+fn loadGlyphVertices(allocator: Allocator, font: FontInfo, glyph_index: i32) ![]Vertex {
+    if (font.cff.size != 0) {
+        return error.CffFound;
+    }
+
+    const data = font.data;
+
+    var vertices: []Vertex = undefined;
+    var vertices_count: u32 = 0;
+
+    var min_x: i16 = undefined;
+    var min_y: i16 = undefined;
+    var max_x: i16 = undefined;
+    var max_y: i16 = undefined;
+    var glyph_dimensions: geometry.Dimensions2D(u32) = undefined;
+
+    // Find the byte offset of the glyh table
+    const glyph_offset = try getGlyfOffset(font, glyph_index);
+    const glyph_offset_index: usize = @ptrToInt(data.ptr) + glyph_offset;
+
+    if (glyph_offset < 0) {
+        return error.InvalidGlypOffset;
+    }
+
+    // Beginning of the glyf table
+    // See: https://docs.microsoft.com/en-us/typography/opentype/spec/glyf
+    const contour_count_signed = readBigEndian(i16, glyph_offset_index);
+
+    min_x = readBigEndian(i16, glyph_offset_index + 2);
+    min_y = readBigEndian(i16, glyph_offset_index + 4);
+    max_x = readBigEndian(i16, glyph_offset_index + 6);
+    max_y = readBigEndian(i16, glyph_offset_index + 8);
+
+    std.log.info("Glyph vertex range: min {d} x {d} max {d} x {d}", .{ min_x, min_y, max_x, max_y });
+    std.log.info("Stripped dimensions {d} x {d}", .{ max_x - min_x, max_y - min_y });
+
+    glyph_dimensions.width = @intCast(u32, max_x - min_x + 1);
+    glyph_dimensions.height = @intCast(u32, max_y - min_y + 1);
+
+    if (contour_count_signed > 0) {
+        const contour_count: u32 = @intCast(u16, contour_count_signed);
+
+        var j: i32 = 0;
+        var m: u32 = 0;
+        var n: u16 = 0;
+
+        // Index of the next point that begins a new contour
+        // This will correspond to value after end_points_of_contours
+        var next_move: i32 = 0;
+
+        var off: usize = 0;
+
+        // end_points_of_contours is located directly after GlyphHeader in the glyf table
+        const end_points_of_contours = @intToPtr([*]u16, glyph_offset_index + @sizeOf(GlyhHeader));
+        const end_points_of_contours_size = @intCast(usize, contour_count * @sizeOf(u16));
+
+        const simple_glyph_table_index = glyph_offset_index + @sizeOf(GlyhHeader);
+
+        // Get the size of the instructions so we can skip past them
+        const instructions_size_bytes = readBigEndian(i16, simple_glyph_table_index + end_points_of_contours_size);
+
+        var glyph_flags: [*]u8 = @intToPtr([*]u8, glyph_offset_index + @sizeOf(GlyhHeader) + (@intCast(usize, contour_count) * 2) + 2 + @intCast(usize, instructions_size_bytes));
+
+        // NOTE: The number of flags is determined by the last entry in the endPtsOfContours array
+        n = 1 + readBigEndian(u16, @ptrToInt(end_points_of_contours) + (@intCast(usize, contour_count - 1) * 2));
+
+        // What is m here?
+        // Size of contours
+        {
+            // Allocate space for all the flags, and vertices
+            m = n + (2 * contour_count);
+            vertices = try allocator.alloc(Vertex, @intCast(usize, m) * @sizeOf(Vertex));
+
+            assert((m - n) > 0);
+            off = (2 * contour_count);
+        }
+
+        var flags: u8 = GlyphFlags.none;
+        var flags_len: u32 = 0;
+        {
+            var i: usize = 0;
+            var flag_count: u8 = 0;
+            while (i < n) : (i += 1) {
+                if (flag_count == 0) {
+                    flags = glyph_flags[0];
+                    glyph_flags = glyph_flags + 1;
+                    if (isFlagSet(flags, GlyphFlags.repeat_flag)) {
+                        // If `repeat_flag` is set, the next flag is the number of times to repeat
+                        flag_count = glyph_flags[0];
+                        glyph_flags = glyph_flags + 1;
+                    }
+                } else {
+                    flag_count -= 1;
+                }
+                vertices[@intCast(usize, off) + @intCast(usize, i)].kind = flags;
+                flags_len += 1;
+            }
+        }
+
+        {
+            var x: i16 = 0;
+            var i: usize = 0;
+            while (i < n) : (i += 1) {
+                flags = vertices[@intCast(usize, off) + @intCast(usize, i)].kind;
+                if (isFlagSet(flags, GlyphFlags.x_short_vector)) {
+                    const dx: i16 = glyph_flags[0];
+                    glyph_flags += 1;
+                    x += if (isFlagSet(flags, GlyphFlags.positive_x_short_vector)) dx else -dx;
+                } else {
+                    if (!isFlagSet(flags, GlyphFlags.same_x)) {
+
+                        // The current x-coordinate is a signed 16-bit delta vector
+                        const abs_x = (@intCast(i16, glyph_flags[0]) << 8) + glyph_flags[1];
+
+                        x += abs_x;
+                        glyph_flags += 2;
+                    }
+                }
+                // If: `!x_short_vector` and `same_x` then the same `x` value shall be appended
+                vertices[off + i].x = x;
+            }
+        }
+
+        {
+            var y: i16 = 0;
+            var i: usize = 0;
+            while (i < n) : (i += 1) {
+                flags = vertices[off + i].kind;
+                if (isFlagSet(flags, GlyphFlags.y_short_vector)) {
+                    const dy: i16 = glyph_flags[0];
+                    glyph_flags += 1;
+                    y += if (isFlagSet(flags, GlyphFlags.positive_y_short_vector)) dy else -dy;
+                } else {
+                    if (!isFlagSet(flags, GlyphFlags.same_y)) {
+                        // The current y-coordinate is a signed 16-bit delta vector
+                        const abs_y = (@intCast(i16, glyph_flags[0]) << 8) + glyph_flags[1];
+                        y += abs_y;
+                        glyph_flags += 2;
+                    }
+                }
+                // If: `!y_short_vector` and `same_y` then the same `y` value shall be appended
+                vertices[off + i].y = y;
+            }
+        }
+        assert(vertices_count == 0);
+
+        var i: usize = 0;
+        var x: i16 = 0;
+        var y: i16 = 0;
+
+        var control1_x: i32 = 0;
+        var control1_y: i32 = 0;
+        var start_x: i32 = 0;
+        var start_y: i32 = 0;
+
+        var scx: i32 = 0; // start_control_point_x
+        var scy: i32 = 0; // start_control_point_y
+
+        var was_off: bool = false;
+        var first_point_off_curve: bool = false;
+
+        next_move = 0;
+        while (i < n) : (i += 1) {
+            const current_vertex = vertices[off + i];
+            if (next_move == i) { // End of contour
+                if (i != 0) {
+                    vertices_count = closeShape(vertices, vertices_count, was_off, first_point_off_curve, start_x, start_y, scx, scy, control1_x, control1_y);
+                }
+
+                first_point_off_curve = ((current_vertex.kind & GlyphFlags.on_curve_point) == 0);
+                if (first_point_off_curve) {
+                    scx = current_vertex.x;
+                    scy = current_vertex.y;
+                    if (!isFlagSet(vertices[off + i + 1].kind, GlyphFlags.on_curve_point)) {
+                        start_x = x + (vertices[off + i + 1].x >> 1);
+                        start_y = y + (vertices[off + i + 1].y >> 1);
+                    } else {
+                        start_x = current_vertex.x + (vertices[off + i + 1].x);
+                        start_y = current_vertex.y + (vertices[off + i + 1].y);
+                        i += 1;
+                    }
+                } else {
+                    start_x = current_vertex.x;
+                    start_y = current_vertex.y;
+                }
+                setVertex(&vertices[vertices_count], .move, start_x, start_y, 0, 0);
+                vertices_count += 1;
+                was_off = false;
+                next_move = 1 + readBigEndian(i16, @ptrToInt(end_points_of_contours) + (@intCast(usize, j) * 2));
+                j += 1;
+            } else {
+                // Continue current contour
+                if (0 == (current_vertex.kind & GlyphFlags.on_curve_point)) {
+                    if (was_off) {
+                        // Even though we've encountered 2 control points in a row, this is still a simple
+                        // quadradic bezier (I.e 1 control point, 2 real points)
+                        // We can calculate the real point that lies between them by taking the average
+                        // of the two control points (It's omitted because it's redundant information)
+                        // https://stackoverflow.com/questions/20733790/
+                        const average_x = @divFloor(control1_x + current_vertex.x, 2);
+                        const average_y = @divFloor(control1_y + current_vertex.y, 2);
+                        setVertex(&vertices[vertices_count], .curve, average_x, average_y, control1_x, control1_y);
+                        vertices_count += 1;
+                    }
+                    control1_x = current_vertex.x;
+                    control1_y = current_vertex.y;
+                    was_off = true;
+                } else {
+                    if (was_off) {
+                        setVertex(&vertices[vertices_count], .curve, current_vertex.x, current_vertex.y, control1_x, control1_y);
+                    } else {
+                        setVertex(&vertices[vertices_count], .line, current_vertex.x, current_vertex.y, 0, 0);
+                    }
+                    vertices_count += 1;
+                    was_off = false;
+                }
+            }
+        }
+        vertices_count = closeShape(vertices, vertices_count, was_off, first_point_off_curve, start_x, start_y, scx, scy, control1_x, control1_y);
+    } else if (contour_count_signed < 0) {
+        // Glyph is composite
+        // TODO: Implement
+        return error.InvalidContourCount;
+    } else {
+        unreachable;
+    }
+
+    return allocator.shrink(vertices, vertices_count);
 }

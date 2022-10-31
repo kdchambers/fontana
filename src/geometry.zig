@@ -16,3 +16,12 @@ pub fn Extent2D(comptime BaseType: type) type {
         width: BaseType,
     };
 }
+
+fn BoundingBox(comptime T: type) type {
+    return struct {
+        x0: T,
+        y0: T,
+        x1: T,
+        y1: T,
+    };
+}
