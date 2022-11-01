@@ -742,7 +742,8 @@ fn calculateGlyphBoundingBoxScaled(font: FontInfo, glyph_index: i32, scale: f64)
     };
 }
 
-pub fn rasterizeGlyph(allocator: std.mem.Allocator, info: FontInfo, scale: f32, glyph_index: i32) !Bitmap {
+pub fn rasterizeGlyph(allocator: std.mem.Allocator, info: FontInfo, scale: f32, codepoint: i32) !Bitmap {
+    const glyph_index: i32 = @intCast(i32, findGlyphIndex(info, codepoint));
     const vertices: []Vertex = try loadGlyphVertices(allocator, info, glyph_index);
     defer allocator.free(vertices);
 
