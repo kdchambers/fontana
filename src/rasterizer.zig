@@ -272,7 +272,6 @@ pub fn rasterize(allocator: std.mem.Allocator, dimensions: geometry.Dimensions2D
                         //
                         const start_x = @min(upper.start.x_intersect, lower.start.x_intersect);
                         const end_x = @max(upper.start.x_intersect, lower.start.x_intersect);
-                        const ends_upper = if (end_x == upper.start.x_intersect) true else false;
                         const pixel_start = @floatToInt(usize, @floor(start_x));
                         const pixel_end = @floatToInt(usize, @floor(end_x));
                         const is_vertical = (@floor(start_x) == @floor(end_x));
@@ -287,24 +286,38 @@ pub fn rasterize(allocator: std.mem.Allocator, dimensions: geometry.Dimensions2D
                             std.debug.assert(c >= 0);
                             pixels[pixel_start + base_index] = graphics.RGBA(f32).fromInt(u8, c, c, c, 255);
                         } else {
-                            const start_top = if (start_x == upper.start.x_intersect) true else false;
-                            var i = pixel_start;
-                            var entry_point = Point(f64){ .x = start_x - @floor(start_x), .y = 0.0 };
-
-                            while (i <= pixel_end) : (i += 1) {
-                                const last_point = Point(f64){ .x = end_x - entry_point.x, .y = if (ends_upper) 1.0 else 0.0 };
+                            const starts_upper = if (upper.start.x_intersect < lower.start.x_intersect) true else false;
+                            const start_fill_anchor_point = Point(f64){ .x = 1.0, .y = if (starts_upper) 1.0 else 0.0 };
+                            var entry_point = Point(f64){ .x = start_x - @floor(start_x), .y = start_fill_anchor_point.y };
+                            var last_point = Point(f64){ .x = end_x - @intToFloat(f64, pixel_start), .y = 1.0 - start_fill_anchor_point.y };
+                            {
                                 const exit_point = geometry.interpolateBoundryPoint(entry_point, last_point);
-                                std.debug.assert(exit_point.x >= 0.0);
-                                std.debug.assert(exit_point.x <= 1.0);
-                                std.debug.assert(exit_point.y >= 0.0);
-                                std.debug.assert(exit_point.y <= 1.0);
-                                const fill_anchor_point = Point(f64){ .x = 1.0, .y = if (start_top) 0.0 else 1.0 };
-                                const c = @floatToInt(u8, @floor(255.0 * geometry.triangleArea(entry_point, exit_point, fill_anchor_point)));
+                                const c = @floatToInt(u8, @floor(255.0 * geometry.triangleArea(entry_point, exit_point, start_fill_anchor_point)));
+                                pixels[pixel_start + base_index] = graphics.RGBA(f32).fromInt(u8, c, c, c, 255);
+                                entry_point = Point(f64){ .x = 0.0, .y = exit_point.y };
+                            }
+                            std.debug.assert(entry_point.x >= 0.0);
+                            std.debug.assert(entry_point.x <= 1.0);
+                            var i = pixel_start + 1;
+                            while (i < pixel_end) : (i += 1) {
+                                last_point.x = end_x - @intToFloat(f64, i);
+                                const exit_point = geometry.interpolateBoundryPoint(entry_point, last_point);
+                                const c = (@floatToInt(u8, (255.0 * (entry_point.y + exit_point.y)) / 2.0));
                                 std.debug.assert(c <= 255);
                                 std.debug.assert(c >= 0);
                                 pixels[i + base_index] = graphics.RGBA(f32).fromInt(u8, c, c, c, 255);
                                 entry_point = Point(f64){ .x = 0.0, .y = exit_point.y };
                             }
+                            const end_fill_anchor_point = Point(f64){
+                                .x = 1.0,
+                                .y = 1.0 - start_fill_anchor_point.x,
+                            };
+                            last_point.x = end_x - @floor(end_x);
+                            std.debug.assert(i == pixel_end);
+                            const c = 255 - @floatToInt(u8, @floor(255.0 * geometry.triangleArea(entry_point, last_point, end_fill_anchor_point)));
+                            std.debug.assert(c <= 255);
+                            std.debug.assert(c >= 0);
+                            pixels[i + base_index] = graphics.RGBA(f32).fromInt(u8, c, c, c, 255);
                         }
                         fill_start = @floatToInt(i32, @floor(end_x)) + 1;
                     }
@@ -314,7 +327,6 @@ pub fn rasterize(allocator: std.mem.Allocator, dimensions: geometry.Dimensions2D
                         //
                         const start_x = @min(upper.end.x_intersect, lower.end.x_intersect);
                         const end_x = @max(upper.end.x_intersect, lower.end.x_intersect);
-                        const ends_upper = if (end_x == upper.end.x_intersect) true else false;
                         const pixel_start = @floatToInt(usize, @floor(start_x));
                         const pixel_end = @floatToInt(usize, @floor(end_x));
                         const is_vertical = (@floor(start_x) == @floor(end_x));
@@ -324,23 +336,36 @@ pub fn rasterize(allocator: std.mem.Allocator, dimensions: geometry.Dimensions2D
                             std.debug.assert(c >= 0);
                             pixels[pixel_start + base_index] = graphics.RGBA(f32).fromInt(u8, c, c, c, 255);
                         } else {
-                            const start_top = if (start_x == upper.end.x_intersect) true else false;
-                            var i = pixel_start;
-                            var entry_point = Point(f64){ .x = start_x - @floor(start_x), .y = 0.0 };
-                            while (i <= pixel_end) : (i += 1) {
-                                const last_point = Point(f64){ .x = end_x - entry_point.x, .y = if (ends_upper) 1.0 else 0.0 };
+                            const starts_upper = if (upper.end.x_intersect < lower.end.x_intersect) true else false;
+                            const start_fill_anchor_point = Point(f64){ .x = 1.0, .y = if (starts_upper) 1.0 else 0.0 };
+                            var entry_point = Point(f64){ .x = start_x - @floor(start_x), .y = start_fill_anchor_point.y };
+                            var last_point = Point(f64){ .x = end_x - @intToFloat(f64, pixel_start), .y = 1.0 - start_fill_anchor_point.y };
+                            {
                                 const exit_point = geometry.interpolateBoundryPoint(entry_point, last_point);
-                                std.debug.assert(exit_point.x >= 0.0);
-                                std.debug.assert(exit_point.x <= 1.0);
-                                std.debug.assert(exit_point.y >= 0.0);
-                                std.debug.assert(exit_point.y <= 1.0);
-                                const fill_anchor_point = Point(f64){ .x = 1.0, .y = if (start_top) 0.0 else 1.0 };
-                                const c = @floatToInt(u8, @floor(255.0 * geometry.triangleArea(entry_point, exit_point, fill_anchor_point)));
+                                const c = 255 - @floatToInt(u8, @floor(255.0 * geometry.triangleArea(entry_point, exit_point, start_fill_anchor_point)));
+                                pixels[pixel_start + base_index] = graphics.RGBA(f32).fromInt(u8, c, c, c, 255);
+                                entry_point = Point(f64){ .x = 0.0, .y = exit_point.y };
+                            }
+                            var i = pixel_start + 1;
+                            while (i < pixel_end) : (i += 1) {
+                                last_point.x = end_x - @intToFloat(f64, i);
+                                const exit_point = geometry.interpolateBoundryPoint(entry_point, last_point);
+                                const c = 255 - (@floatToInt(u8, (255.0 * (entry_point.y + exit_point.y)) / 2.0));
                                 std.debug.assert(c <= 255);
                                 std.debug.assert(c >= 0);
                                 pixels[i + base_index] = graphics.RGBA(f32).fromInt(u8, c, c, c, 255);
                                 entry_point = Point(f64){ .x = 0.0, .y = exit_point.y };
                             }
+                            const end_fill_anchor_point = Point(f64){
+                                .x = 1.0,
+                                .y = 1.0 - start_fill_anchor_point.x,
+                            };
+                            last_point.x = end_x - @floor(end_x);
+                            std.debug.assert(i == pixel_end);
+                            const c = @floatToInt(u8, @floor(255.0 * geometry.triangleArea(entry_point, last_point, end_fill_anchor_point)));
+                            std.debug.assert(c <= 255);
+                            std.debug.assert(c >= 0);
+                            pixels[i + base_index] = graphics.RGBA(f32).fromInt(u8, c, c, c, 255);
                         }
                         fill_end = @floatToInt(i32, @floor(start_x)) - 1;
                     }
@@ -377,11 +402,6 @@ pub fn rasterize(allocator: std.mem.Allocator, dimensions: geometry.Dimensions2D
                         pixels[pixel_x + base_index] = graphics.RGBA(f32).fromInt(u8, c, c, c, 255);
                         continue;
                     }
-
-                    var fill_anchor_point = Point(f64){
-                        .x = 1.0,
-                        .y = if (is_upper) 1.0 else 0.0,
-                    };
 
                     const samples_to_take: usize = pixel_count * samples_per_pixel;
                     const sample_t_start = pair.start.t;
@@ -433,6 +453,10 @@ pub fn rasterize(allocator: std.mem.Allocator, dimensions: geometry.Dimensions2D
                         std.debug.assert(floatCompare(end_sample_abs, sample_t_end));
                     }
 
+                    var fill_anchor_point = Point(f64){
+                        .x = 1.0,
+                        .y = if (is_upper) 1.0 else 0.0,
+                    };
                     var previous_sampled_point = Point(f64){
                         .x = pair.start.x_intersect - @intToFloat(f64, pixel_start),
                         .y = if (is_upper) 1.0 else 0.0,
