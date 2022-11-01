@@ -13,7 +13,7 @@ const YIntersection = struct {
     t: f64, // t value (sample) of outline
 };
 
-fn StackArray(comptime BaseType: type, capacity: comptime_int) type {
+fn StackArray(comptime BaseType: type, comptime capacity: comptime_int) type {
     return struct {
         buffer: [capacity]BaseType,
         len: u64,
@@ -235,7 +235,7 @@ inline fn floatCompare(first: f64, second: f64) bool {
     return false;
 }
 
-fn rasterize(allocator: std.mem.Allocator, dimensions: geometry.Dimensions2D(u32), outlines: []Outline) ![]graphics.RGBA(f32) {
+pub fn rasterize(allocator: std.mem.Allocator, dimensions: geometry.Dimensions2D(u32), outlines: []Outline) ![]graphics.RGBA(f32) {
     const bitmap_pixel_count = @intCast(usize, dimensions.width) * dimensions.height;
     var pixels = try allocator.alloc(graphics.RGBA(f32), bitmap_pixel_count);
 
@@ -270,8 +270,8 @@ fn rasterize(allocator: std.mem.Allocator, dimensions: geometry.Dimensions2D(u32
                         //
                         // Start Anti-aliasing
                         //
-                        const start_x = @minimum(upper.start.x_intersect, lower.start.x_intersect);
-                        const end_x = @maximum(upper.start.x_intersect, lower.start.x_intersect);
+                        const start_x = @min(upper.start.x_intersect, lower.start.x_intersect);
+                        const end_x = @max(upper.start.x_intersect, lower.start.x_intersect);
                         const ends_upper = if (end_x == upper.start.x_intersect) true else false;
                         const pixel_start = @floatToInt(usize, @floor(start_x));
                         const pixel_end = @floatToInt(usize, @floor(end_x));
@@ -312,8 +312,8 @@ fn rasterize(allocator: std.mem.Allocator, dimensions: geometry.Dimensions2D(u32
                         //
                         // End Anti-aliasing
                         //
-                        const start_x = @minimum(upper.end.x_intersect, lower.end.x_intersect);
-                        const end_x = @maximum(upper.end.x_intersect, lower.end.x_intersect);
+                        const start_x = @min(upper.end.x_intersect, lower.end.x_intersect);
+                        const end_x = @max(upper.end.x_intersect, lower.end.x_intersect);
                         const ends_upper = if (end_x == upper.end.x_intersect) true else false;
                         const pixel_start = @floatToInt(usize, @floor(start_x));
                         const pixel_end = @floatToInt(usize, @floor(end_x));
@@ -646,7 +646,7 @@ fn combineIntersectionLists(
                 //   2. Has the most leftmost point
                 //
                 var x: usize = i + 1;
-                const ref_x_intersect: f64 = @maximum(start.x_intersect, end.x_intersect);
+                const ref_x_intersect: f64 = @max(start.x_intersect, end.x_intersect);
                 var smallest_x: f64 = std.math.floatMax(f64);
                 var smallest_index_opt: ?usize = null;
                 while (x < pair_count) : (x += 1) {
@@ -660,7 +660,7 @@ fn combineIntersectionLists(
 
                     const comp_start = intersections.at(comp_index_start);
                     const comp_end = intersections.at(comp_index_end);
-                    const comp_x = @minimum(comp_start.x_intersect, comp_end.x_intersect);
+                    const comp_x = @min(comp_start.x_intersect, comp_end.x_intersect);
                     if (comp_x >= ref_x_intersect and comp_x < smallest_x) {
                         smallest_x = comp_x;
                         smallest_index_opt = x;
@@ -706,8 +706,8 @@ fn calculateHorizontalLineIntersections(scanline_y: f64, outlines: []Outline) !Y
         for (outline.segments) |segment, segment_i| {
             const point_a = segment.from;
             const point_b = segment.to;
-            const max_y = @maximum(point_a.y, point_b.y);
-            const min_y = @minimum(point_a.y, point_b.y);
+            const max_y = @max(point_a.y, point_b.y);
+            const min_y = @min(point_a.y, point_b.y);
             if (segment.isCurve()) {
                 const control_point = segment.control_opt.?;
                 const bezier = geometry.BezierQuadratic{ .a = point_a, .b = point_b, .control = control_point };

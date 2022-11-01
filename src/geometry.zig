@@ -3,7 +3,7 @@
 
 const std = @import("std");
 
-fn Point(comptime T: type) type {
+pub fn Point(comptime T: type) type {
     return extern struct {
         x: T,
         y: T,
@@ -26,7 +26,7 @@ pub fn Extent2D(comptime BaseType: type) type {
     };
 }
 
-fn BoundingBox(comptime T: type) type {
+pub fn BoundingBox(comptime T: type) type {
     return extern struct {
         x0: T,
         y0: T,
@@ -35,25 +35,25 @@ fn BoundingBox(comptime T: type) type {
     };
 }
 
-const BezierQuadratic = extern struct {
+pub const BezierQuadratic = extern struct {
     a: Point(f64),
     b: Point(f64),
     control: Point(f64),
 };
 
 /// Used in quadraticBezierPlaneIntersections
-const CurveYIntersection = struct {
+pub const CurveYIntersection = struct {
     x: f64,
     t: f64,
 };
 
-fn distanceBetweenPoints(point_a: Point(f64), point_b: Point(f64)) f64 {
+pub fn distanceBetweenPoints(point_a: Point(f64), point_b: Point(f64)) f64 {
     const pow = std.math.pow;
     const sqrt = std.math.sqrt;
     return sqrt(pow(f64, point_b.y - point_a.y, 2) + pow(f64, point_a.x - point_b.x, 2));
 }
 
-fn quadraticBezierPoint(bezier: BezierQuadratic, t: f64) Point(f64) {
+pub fn quadraticBezierPoint(bezier: BezierQuadratic, t: f64) Point(f64) {
     std.debug.assert(t >= 0.0);
     std.debug.assert(t <= 1.0);
     const one_minus_t: f64 = 1.0 - t;
@@ -67,7 +67,7 @@ fn quadraticBezierPoint(bezier: BezierQuadratic, t: f64) Point(f64) {
     };
 }
 
-fn quadradicBezierInflectionPoint(bezier: BezierQuadratic) Point(f64) {
+pub fn quadradicBezierInflectionPoint(bezier: BezierQuadratic) Point(f64) {
     const line_ab_constant = bezier.a.y;
     const line_ab_t = (bezier.control.y - bezier.a.y);
     const line_bc_constant = bezier.control.y;
@@ -89,7 +89,7 @@ fn quadradicBezierInflectionPoint(bezier: BezierQuadratic) Point(f64) {
     };
 }
 
-fn quadraticBezierPlaneIntersections(bezier: BezierQuadratic, horizontal_axis: f64) [2]?CurveYIntersection {
+pub fn quadraticBezierPlaneIntersections(bezier: BezierQuadratic, horizontal_axis: f64) [2]?CurveYIntersection {
     const a: f64 = bezier.a.y;
     const b: f64 = bezier.control.y;
     const c: f64 = bezier.b.y;
@@ -100,8 +100,8 @@ fn quadraticBezierPlaneIntersections(bezier: BezierQuadratic, horizontal_axis: f
     //
     const term_a = a - (2 * b) + c;
     if (term_a == 0.0) {
-        const min = @minimum(a, c);
-        const max = @maximum(a, c);
+        const min = @min(a, c);
+        const max = @max(a, c);
         if (horizontal_axis < min or horizontal_axis > max) return .{ null, null };
         const dist = c - a;
         const t = (horizontal_axis - a) / dist;
@@ -129,13 +129,13 @@ fn quadraticBezierPlaneIntersections(bezier: BezierQuadratic, horizontal_axis: f
     };
 }
 
-fn triangleArea(p1: Point(f64), p2: Point(f64), p3: Point(f64)) f64 {
+pub fn triangleArea(p1: Point(f64), p2: Point(f64), p3: Point(f64)) f64 {
     return @fabs((p1.x * (p2.y - p3.y)) + (p2.x * (p3.y - p1.y)) + (p3.x * (p1.y - p2.y))) / 2.0;
 }
 
 /// Given two points, one that lies inside a normalized boundry and one that lies outside
 /// Interpolate a point between them that lies on the boundry of the imaginary 1x1 square
-fn interpolateBoundryPoint(inside: Point(f64), outside: Point(f64)) Point(f64) {
+pub fn interpolateBoundryPoint(inside: Point(f64), outside: Point(f64)) Point(f64) {
     std.debug.assert(inside.x >= 0.0);
     std.debug.assert(inside.x <= 1.0);
     std.debug.assert(inside.y >= 0.0);
