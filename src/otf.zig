@@ -370,7 +370,7 @@ const Buffer = struct {
     size: u32 = 0,
 };
 
-pub fn parseOTF(font_data: []u8) !FontInfo {
+pub fn parseFromBytes(font_data: []u8) !FontInfo {
     var data_sections = DataSections{};
     {
         var fixed_buffer_stream = std.io.FixedBufferStream([]const u8){ .buffer = font_data, .pos = 0 };
@@ -742,7 +742,7 @@ fn calculateGlyphBoundingBoxScaled(font: FontInfo, glyph_index: i32, scale: f64)
     };
 }
 
-fn createGlyphBitmap(allocator: std.mem.Allocator, info: FontInfo, scale: f32, glyph_index: i32) !Bitmap {
+pub fn rasterizeGlyph(allocator: std.mem.Allocator, info: FontInfo, scale: f32, glyph_index: i32) !Bitmap {
     const vertices: []Vertex = try loadGlyphVertices(allocator, info, glyph_index);
     defer allocator.free(vertices);
 
