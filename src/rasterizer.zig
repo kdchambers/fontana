@@ -186,24 +186,26 @@ pub const Outline = struct {
 };
 
 pub const OutlineSegment = struct {
+    const null_control: f64 = std.math.floatMin(f64);
+
     from: Point(f64),
     to: Point(f64),
-    control_opt: ?Point(f64) = null,
+    control: Point(f64) = .{ .x = @This().null_control, .y = undefined },
     /// The t value that corresponds to 1 pixel of distance (approx)
     t_per_pixel: f64,
 
     pub inline fn isCurve(self: @This()) bool {
-        return self.control_opt != null;
+        return self.control.x != @This().null_control;
     }
 
     pub fn sample(self: @This(), t: f64) Point(f64) {
         std.debug.assert(t <= 1.0);
         std.debug.assert(t >= 0.0);
-        if (self.control_opt) |control| {
+        if (self.isCurve()) {
             const bezier = geometry.BezierQuadratic{
                 .a = self.from,
                 .b = self.to,
-                .control = control,
+                .control = self.control,
             };
             return geometry.quadraticBezierPoint(bezier, t);
         }
@@ -732,7 +734,7 @@ fn calculateHorizontalLineIntersections(scanline_y: f64, outlines: []Outline) !Y
             const max_y = @max(point_a.y, point_b.y);
             const min_y = @min(point_a.y, point_b.y);
             if (segment.isCurve()) {
-                const control_point = segment.control_opt.?;
+                const control_point = segment.control;
                 const bezier = geometry.BezierQuadratic{ .a = point_a, .b = point_b, .control = control_point };
                 const inflection_y = geometry.quadradicBezierInflectionPoint(bezier).y;
                 const is_middle_higher = (inflection_y > max_y) and scanline_y > inflection_y;

@@ -1143,7 +1143,7 @@ fn createOutlines(allocator: std.mem.Allocator, vertices: []Vertex, height: f64,
                         .from = point_from,
                         .to = point_to,
                         .t_per_pixel = undefined,
-                        .control_opt = Point(f64){
+                        .control = Point(f64){
                             .x = @intToFloat(f64, to.control1_x) * scale,
                             .y = height - (@intToFloat(f64, to.control1_y) * scale),
                         },
