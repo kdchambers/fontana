@@ -235,7 +235,7 @@ inline fn floatCompare(first: f64, second: f64) bool {
     return false;
 }
 
-pub fn rasterize(allocator: std.mem.Allocator, dimensions: geometry.Dimensions2D(u32), outlines: []Outline) ![]graphics.RGBA(f32) {
+pub fn rasterize(allocator: std.mem.Allocator, dimensions: geometry.Dimensions2D(u32), outlines: []Outline) ![*]graphics.RGBA(f32) {
     const bitmap_pixel_count = @intCast(usize, dimensions.width) * dimensions.height;
     var pixels = try allocator.alloc(graphics.RGBA(f32), bitmap_pixel_count);
 
@@ -530,7 +530,6 @@ pub fn rasterize(allocator: std.mem.Allocator, dimensions: geometry.Dimensions2D
                     // Rasterize last pixel
                     //
                     const interpolated_point = blk: {
-                        std.debug.print("Current x: {d}\n", .{current_sampled_point.x});
                         std.debug.assert(current_sampled_point.x >= 0.0);
                         if (@floatToInt(usize, @floor(current_sampled_point.x)) == pixel_end) {
                             break :blk current_sampled_point;
@@ -558,7 +557,7 @@ pub fn rasterize(allocator: std.mem.Allocator, dimensions: geometry.Dimensions2D
         allocator.free(outline.segments);
     }
 
-    return pixels;
+    return pixels.ptr;
 }
 
 /// Takes a list of upper and lower intersections, and groups them into
