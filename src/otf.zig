@@ -736,10 +736,10 @@ fn calculateGlyphBoundingBox(font: FontInfo, glyph_index: i32) !geometry.Boundin
 fn calculateGlyphBoundingBoxScaled(font: FontInfo, glyph_index: i32, scale: f64) !geometry.BoundingBox(i32) {
     const unscaled = try calculateGlyphBoundingBox(font, glyph_index);
     return geometry.BoundingBox(i32){
-        .x0 = @floatToInt(i32, @floor(@intToFloat(f64, unscaled.x0) * scale.x)),
-        .y0 = @floatToInt(i32, @floor(@intToFloat(f64, unscaled.y0) * scale.y)),
-        .x1 = @floatToInt(i32, @ceil(@intToFloat(f64, unscaled.x1) * scale.x)),
-        .y1 = @floatToInt(i32, @ceil(@intToFloat(f64, unscaled.y1) * scale.y)),
+        .x0 = @floatToInt(i32, @floor(@intToFloat(f64, unscaled.x0) * scale)),
+        .y0 = @floatToInt(i32, @floor(@intToFloat(f64, unscaled.y0) * scale)),
+        .x1 = @floatToInt(i32, @ceil(@intToFloat(f64, unscaled.x1) * scale)),
+        .y1 = @floatToInt(i32, @ceil(@intToFloat(f64, unscaled.y1) * scale)),
     };
 }
 
@@ -849,7 +849,7 @@ pub fn scaleForPixelHeight(font: FontInfo, height: f32) f32 {
 
 pub fn getRequiredDimensions(font: FontInfo, codepoint: i32, scale: f64) !geometry.Dimensions2D(u32) {
     const glyph_index = @intCast(i32, findGlyphIndex(font, codepoint));
-    const bounding_box = calculateGlyphBoundingBoxScaled(font, glyph_index, scale);
+    const bounding_box = try calculateGlyphBoundingBoxScaled(font, glyph_index, scale);
     std.debug.assert(bounding_box.x1 >= bounding_box.x0);
     std.debug.assert(bounding_box.y1 >= bounding_box.y0);
     return geometry.Dimensions2D(u32){
