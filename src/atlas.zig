@@ -174,10 +174,10 @@ pub fn Atlas(comptime config: AtlasConfiguration) type {
                 for (self.codepoint_list) |codepoint, codepoint_i| {
                     var dimension = &self.dimension_list[codepoint_i];
                     dimension.* = try otf.getRequiredDimensions(font, codepoint, scale);
-                    if (dimension.width > max_width) max_width = dimension.width;
-                    if (dimension.height > max_height) max_height = dimension.height;
                     const bounding_box = try otf.calculateGlyphBoundingBoxScaled(font, codepoint, scale);
                     self.vertical_offset_list[codepoint_i] = @intCast(i16, bounding_box.y1);
+                    if (dimension.width > max_width) max_width = dimension.width;
+                    if (dimension.height > max_height) max_height = dimension.height;
                 }
                 self.cell_dimensions = .{
                     .width = @intCast(u16, max_width),

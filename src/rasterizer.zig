@@ -26,7 +26,8 @@ fn StackArray(comptime BaseType: type, comptime capacity: comptime_int) type {
             self.len += 1;
         }
 
-        pub fn toSlice(self: @This()) []const BaseType {
+        // NOTE: Pass by pointer is required. Otherwise garbage value is returned
+        pub fn toSlice(self: *@This()) []const BaseType {
             return self.buffer[0..self.len];
         }
     };
@@ -754,6 +755,7 @@ fn combineIntersectionLists(
 fn calculateHorizontalLineIntersections(scanline_y: f64, outlines: []Outline) !YIntersectionList {
     var intersection_list = YIntersectionList{ .len = 0, .buffer = undefined };
     for (outlines) |outline, outline_i| {
+        const max_t = @intToFloat(f64, outline.segments.len);
         for (outline.segments) |segment, segment_i| {
             const point_a = segment.from;
             const point_b = segment.to;
@@ -774,18 +776,18 @@ fn calculateHorizontalLineIntersections(scanline_y: f64, outlines: []Outline) !Y
                         const intersection = YIntersection{
                             .outline_index = @intCast(u32, outline_i),
                             .x_intersect = first_intersection.x,
-                            .t = @intToFloat(f64, segment_i) + first_intersection.t,
+                            .t = @mod(@intToFloat(f64, segment_i) + first_intersection.t, max_t),
                         };
                         try intersection_list.add(intersection);
                     }
                     if (optional_intersection_points[1]) |second_intersection| {
                         const x_diff_threshold = 0.001;
                         if (@fabs(second_intersection.x - first_intersection.x) > x_diff_threshold) {
-                            const t_second = @intToFloat(f64, segment_i) + second_intersection.t;
+                            const t_second = @mod(@intToFloat(f64, segment_i) + second_intersection.t, max_t);
                             const intersection = YIntersection{
                                 .outline_index = @intCast(u32, outline_i),
                                 .x_intersect = second_intersection.x,
-                                .t = t_second,
+                                .t = @mod(t_second, max_t),
                             };
                             try intersection_list.add(intersection);
                         }
@@ -794,7 +796,7 @@ fn calculateHorizontalLineIntersections(scanline_y: f64, outlines: []Outline) !Y
                     try intersection_list.add(.{
                         .outline_index = @intCast(u32, outline_i),
                         .x_intersect = second_intersection.x,
-                        .t = @intToFloat(f64, segment_i) + second_intersection.t,
+                        .t = @mod(@intToFloat(f64, segment_i) + second_intersection.t, max_t),
                     });
                 }
                 continue;
@@ -829,7 +831,7 @@ fn calculateHorizontalLineIntersections(scanline_y: f64, outlines: []Outline) !Y
                 try intersection_list.add(.{
                     .outline_index = @intCast(u32, outline_i),
                     .x_intersect = point_a.x,
-                    .t = t,
+                    .t = @mod(t, max_t),
                 });
             } else {
                 const x_diff = point_b.x - point_a.x;
@@ -837,7 +839,7 @@ fn calculateHorizontalLineIntersections(scanline_y: f64, outlines: []Outline) !Y
                 try intersection_list.add(.{
                     .outline_index = @intCast(u32, outline_i),
                     .x_intersect = x_intersect,
-                    .t = t,
+                    .t = @mod(t, max_t),
                 });
             }
         }
