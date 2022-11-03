@@ -17,6 +17,13 @@ pub fn Dimensions2D(comptime BaseType: type) type {
     };
 }
 
+pub fn Coordinates2D(comptime BaseType: type) type {
+    return extern struct {
+        x: BaseType,
+        y: BaseType,
+    };
+}
+
 pub fn Extent2D(comptime BaseType: type) type {
     return extern struct {
         x: BaseType,

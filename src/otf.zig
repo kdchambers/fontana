@@ -743,7 +743,12 @@ fn calculateGlyphBoundingBoxScaled(font: FontInfo, glyph_index: i32, scale: f64)
     };
 }
 
-pub fn rasterizeGlyph(allocator: std.mem.Allocator, font: FontInfo, scale: f32, codepoint: i32) !Bitmap {
+pub fn rasterizeGlyph(
+    allocator: std.mem.Allocator,
+    font: FontInfo,
+    scale: f32,
+    codepoint: i32,
+) !Bitmap {
     const glyph_index: i32 = @intCast(i32, findGlyphIndex(font, codepoint));
     const vertices: []Vertex = try loadGlyphVertices(allocator, font, glyph_index);
     defer allocator.free(vertices);
@@ -770,16 +775,27 @@ pub fn rasterizeGlyph(allocator: std.mem.Allocator, font: FontInfo, scale: f32, 
         .height = @intCast(u32, bounding_box_scaled.y1 - bounding_box_scaled.y0),
     };
 
+    const outlines = try createOutlines(allocator, vertices, @intToFloat(f64, dimensions.height), scale);
+    defer allocator.free(outlines);
+
     var bitmap = Bitmap{
         .width = dimensions.width,
         .height = dimensions.height,
         .pixels = undefined,
     };
-
-    const outlines = try createOutlines(allocator, vertices, @intToFloat(f64, dimensions.height), scale);
-    defer allocator.free(outlines);
-
-    bitmap.pixels = try rasterizer.rasterize(allocator, dimensions, outlines);
+    const pixel_count = @intCast(usize, dimensions.width) * dimensions.height;
+    bitmap.pixels = (try allocator.alloc(graphics.RGBA(f32), pixel_count)).ptr;
+    var pixel_writer = rasterizer.SubTexturePixelWriter(graphics.RGBA(f32)){
+        .texture_width = dimensions.width,
+        .write_extent = .{
+            .x = 0,
+            .y = 0,
+            .width = dimensions.width,
+            .height = dimensions.height,
+        },
+        .pixels = bitmap.pixels,
+    };
+    try rasterizer.rasterize(graphics.RGBA(f32), allocator, dimensions, outlines, pixel_writer);
     return bitmap;
 }
 
@@ -837,14 +853,17 @@ fn isFlagSet(value: u8, bit_mask: u8) bool {
     return (value & bit_mask) != 0;
 }
 
-pub fn scaleForPixelHeight(font: FontInfo, height: f32) f32 {
+/// Calculates the required scale value to generate glyphs with a max height of
+/// desired_height. This uses the bounding box of the entire font, not a specific
+/// glyph. Therefore indiviual rendered glyphs are likely to be under this value,
+/// but never above.
+pub fn scaleForPixelHeight(font: FontInfo, desired_height: f32) f32 {
     const font_data_start_index = @ptrToInt(&font.data[0]);
-    assert(font.hhea.offset != 0);
     const base_index: usize = font_data_start_index + font.hhea.offset;
-    const first = bigToNative(i16, @intToPtr(*i16, (base_index + 4)).*); //ascender
-    const second = bigToNative(i16, @intToPtr(*i16, (base_index + 6)).*); // descender
-    const fheight = @intToFloat(f32, first - second);
-    return height / fheight;
+    const ascender = bigToNative(i16, @intToPtr(*i16, (base_index + 4)).*);
+    const descender = bigToNative(i16, @intToPtr(*i16, (base_index + 6)).*);
+    const unscaled_height = @intToFloat(f32, ascender + (-descender));
+    return desired_height / unscaled_height;
 }
 
 pub fn getRequiredDimensions(font: FontInfo, codepoint: i32, scale: f64) !geometry.Dimensions2D(u32) {

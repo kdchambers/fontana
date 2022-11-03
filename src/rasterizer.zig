@@ -216,6 +216,32 @@ pub const OutlineSegment = struct {
     }
 };
 
+pub fn SubTexturePixelWriter(comptime PixelType: type) type {
+    return struct {
+        texture_width: u32,
+        write_extent: geometry.Extent2D(u32),
+        pixels: [*]PixelType,
+
+        pub inline fn set(self: @This(), coords: geometry.Coordinates2D(usize), coverage: u8) void {
+            const x = coords.x;
+            const y = coords.y;
+            std.debug.assert(x >= 0);
+            std.debug.assert(x < self.write_extent.width);
+            std.debug.assert(y >= 0);
+            std.debug.assert(y < self.write_extent.height);
+            const global_x = self.write_extent.x + x;
+            const global_y = self.write_extent.y + y;
+            const index = global_x + (self.texture_width * global_y);
+            switch (PixelType) {
+                graphics.RGBA(f32) => {
+                    self.pixels[index] = graphics.RGBA(f32).fromInt(u8, coverage, coverage, coverage, 255);
+                },
+                else => unreachable,
+            }
+        }
+    };
+}
+
 inline fn minTMiddle(a: f64, b: f64, max: f64) f64 {
     const positive = (a <= b);
     const dist_forward = if (positive) b - a else b + (max - a);
@@ -237,18 +263,20 @@ inline fn floatCompare(first: f64, second: f64) bool {
     return false;
 }
 
-pub fn rasterize(allocator: std.mem.Allocator, dimensions: geometry.Dimensions2D(u32), outlines: []Outline) ![*]graphics.RGBA(f32) {
-    const bitmap_pixel_count = @intCast(usize, dimensions.width) * dimensions.height;
-    var pixels = try allocator.alloc(graphics.RGBA(f32), bitmap_pixel_count);
-
-    const null_pixel = graphics.RGBA(f32){ .r = 0.0, .g = 0.0, .b = 0.0, .a = 0.0 };
-    std.mem.set(graphics.RGBA(f32), pixels, null_pixel);
-
+pub fn rasterize(
+    comptime PixelType: type,
+    allocator: std.mem.Allocator,
+    dimensions: geometry.Dimensions2D(u32),
+    outlines: []Outline,
+    pixel_writer: anytype,
+) !void {
+    if (PixelType != graphics.RGBA(f32)) {
+        @compileError("rasterize function only supports bitmaps of RGBA(f32)");
+    }
     var scanline_lower: usize = 1;
     var intersections_upper = try calculateHorizontalLineIntersections(0, outlines);
     while (scanline_lower <= dimensions.height) : (scanline_lower += 1) {
         const scanline_upper = scanline_lower - 1;
-        const base_index = scanline_upper * dimensions.width;
         var intersections_lower = try calculateHorizontalLineIntersections(@intToFloat(f64, scanline_lower), outlines);
         if (intersections_lower.len > 0 or intersections_upper.len > 0) {
             const uppers = intersections_upper.buffer[0..intersections_upper.len];
@@ -286,7 +314,7 @@ pub fn rasterize(allocator: std.mem.Allocator, dimensions: geometry.Dimensions2D
                             const c = 255 - @floatToInt(u8, @divTrunc((@mod(start_x, 1.0) + @mod(end_x, 1.0)) * 255.0, 2.0));
                             std.debug.assert(c <= 255);
                             std.debug.assert(c >= 0);
-                            pixels[pixel_start + base_index] = graphics.RGBA(f32).fromInt(u8, c, c, c, 255);
+                            pixel_writer.set(.{ .x = pixel_start, .y = scanline_upper }, c);
                         } else {
                             const starts_upper = if (upper.start.x_intersect < lower.start.x_intersect) true else false;
                             const start_fill_anchor_point = Point(f64){ .x = 1.0, .y = if (starts_upper) 1.0 else 0.0 };
@@ -295,7 +323,7 @@ pub fn rasterize(allocator: std.mem.Allocator, dimensions: geometry.Dimensions2D
                             {
                                 const exit_point = geometry.interpolateBoundryPoint(entry_point, last_point);
                                 const c = @floatToInt(u8, @floor(255.0 * geometry.triangleArea(entry_point, exit_point, start_fill_anchor_point)));
-                                pixels[pixel_start + base_index] = graphics.RGBA(f32).fromInt(u8, c, c, c, 255);
+                                pixel_writer.set(.{ .x = pixel_start, .y = scanline_upper }, c);
                                 entry_point = Point(f64){ .x = 0.0, .y = exit_point.y };
                             }
                             std.debug.assert(entry_point.x >= 0.0);
@@ -307,7 +335,7 @@ pub fn rasterize(allocator: std.mem.Allocator, dimensions: geometry.Dimensions2D
                                 const c = (@floatToInt(u8, (255.0 * (entry_point.y + exit_point.y)) / 2.0));
                                 std.debug.assert(c <= 255);
                                 std.debug.assert(c >= 0);
-                                pixels[i + base_index] = graphics.RGBA(f32).fromInt(u8, c, c, c, 255);
+                                pixel_writer.set(.{ .x = i, .y = scanline_upper }, c);
                                 entry_point = Point(f64){ .x = 0.0, .y = exit_point.y };
                             }
                             const end_fill_anchor_point = Point(f64){
@@ -319,7 +347,7 @@ pub fn rasterize(allocator: std.mem.Allocator, dimensions: geometry.Dimensions2D
                             const c = 255 - @floatToInt(u8, @floor(255.0 * geometry.triangleArea(entry_point, last_point, end_fill_anchor_point)));
                             std.debug.assert(c <= 255);
                             std.debug.assert(c >= 0);
-                            pixels[i + base_index] = graphics.RGBA(f32).fromInt(u8, c, c, c, 255);
+                            pixel_writer.set(.{ .x = i, .y = scanline_upper }, c);
                         }
                         fill_start = @floatToInt(i32, @floor(end_x)) + 1;
                     }
@@ -336,7 +364,7 @@ pub fn rasterize(allocator: std.mem.Allocator, dimensions: geometry.Dimensions2D
                             const c = @floatToInt(u8, @divTrunc((@mod(start_x, 1.0) + @mod(end_x, 1.0)) * 255.0, 2.0));
                             std.debug.assert(c <= 255);
                             std.debug.assert(c >= 0);
-                            pixels[pixel_start + base_index] = graphics.RGBA(f32).fromInt(u8, c, c, c, 255);
+                            pixel_writer.set(.{ .x = pixel_start, .y = scanline_upper }, c);
                         } else {
                             const starts_upper = if (upper.end.x_intersect < lower.end.x_intersect) true else false;
                             const start_fill_anchor_point = Point(f64){ .x = 1.0, .y = if (starts_upper) 1.0 else 0.0 };
@@ -345,7 +373,7 @@ pub fn rasterize(allocator: std.mem.Allocator, dimensions: geometry.Dimensions2D
                             {
                                 const exit_point = geometry.interpolateBoundryPoint(entry_point, last_point);
                                 const c = 255 - @floatToInt(u8, @floor(255.0 * geometry.triangleArea(entry_point, exit_point, start_fill_anchor_point)));
-                                pixels[pixel_start + base_index] = graphics.RGBA(f32).fromInt(u8, c, c, c, 255);
+                                pixel_writer.set(.{ .x = pixel_start, .y = scanline_upper }, c);
                                 entry_point = Point(f64){ .x = 0.0, .y = exit_point.y };
                             }
                             var i = pixel_start + 1;
@@ -355,7 +383,7 @@ pub fn rasterize(allocator: std.mem.Allocator, dimensions: geometry.Dimensions2D
                                 const c = 255 - (@floatToInt(u8, (255.0 * (entry_point.y + exit_point.y)) / 2.0));
                                 std.debug.assert(c <= 255);
                                 std.debug.assert(c >= 0);
-                                pixels[i + base_index] = graphics.RGBA(f32).fromInt(u8, c, c, c, 255);
+                                pixel_writer.set(.{ .x = i, .y = scanline_upper }, c);
                                 entry_point = Point(f64){ .x = 0.0, .y = exit_point.y };
                             }
                             const end_fill_anchor_point = Point(f64){
@@ -367,7 +395,7 @@ pub fn rasterize(allocator: std.mem.Allocator, dimensions: geometry.Dimensions2D
                             const c = @floatToInt(u8, @floor(255.0 * geometry.triangleArea(entry_point, last_point, end_fill_anchor_point)));
                             std.debug.assert(c <= 255);
                             std.debug.assert(c >= 0);
-                            pixels[i + base_index] = graphics.RGBA(f32).fromInt(u8, c, c, c, 255);
+                            pixel_writer.set(.{ .x = i, .y = scanline_upper }, c);
                         }
                         fill_end = @floatToInt(i32, @floor(start_x)) - 1;
                     }
@@ -376,7 +404,7 @@ pub fn rasterize(allocator: std.mem.Allocator, dimensions: geometry.Dimensions2D
                     //
                     var i: usize = @intCast(usize, fill_start);
                     while (i <= @intCast(usize, fill_end)) : (i += 1) {
-                        pixels[i + base_index] = graphics.RGBA(f32).fromInt(u8, 255, 255, 255, 255);
+                        pixel_writer.set(.{ .x = i, .y = scanline_upper }, 255);
                     }
                 } else {
                     //
@@ -401,7 +429,7 @@ pub fn rasterize(allocator: std.mem.Allocator, dimensions: geometry.Dimensions2D
                     if (pixel_count == 0) {
                         // TODO
                         const c = 255.0;
-                        pixels[pixel_x + base_index] = graphics.RGBA(f32).fromInt(u8, c, c, c, 255);
+                        pixel_writer.set(.{ .x = pixel_x, .y = scanline_upper }, c);
                         continue;
                     }
 
@@ -505,7 +533,7 @@ pub fn rasterize(allocator: std.mem.Allocator, dimensions: geometry.Dimensions2D
                                 coverage = 1.0 - coverage;
                             }
                             const c = @floatToInt(u8, coverage * 255.0);
-                            pixels[pixel_x + base_index] = graphics.RGBA(f32).fromInt(u8, c, c, c, 255);
+                            pixel_writer.set(.{ .x = pixel_x, .y = scanline_upper }, c);
 
                             //
                             // Adjust for next pixel
@@ -548,7 +576,7 @@ pub fn rasterize(allocator: std.mem.Allocator, dimensions: geometry.Dimensions2D
                         coverage = 1.0 - coverage;
                     }
                     const c = @floatToInt(u8, coverage * 255.0);
-                    pixels[pixel_x + base_index] = graphics.RGBA(f32).fromInt(u8, c, c, c, 255);
+                    pixel_writer.set(.{ .x = pixel_x, .y = scanline_upper }, c);
                 }
             }
         }
@@ -558,8 +586,6 @@ pub fn rasterize(allocator: std.mem.Allocator, dimensions: geometry.Dimensions2D
     for (outlines) |*outline| {
         allocator.free(outline.segments);
     }
-
-    return pixels.ptr;
 }
 
 /// Takes a list of upper and lower intersections, and groups them into
