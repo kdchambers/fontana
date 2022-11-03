@@ -246,7 +246,7 @@ pub fn rasterize(allocator: std.mem.Allocator, dimensions: geometry.Dimensions2D
 
     var scanline_lower: usize = 1;
     var intersections_upper = try calculateHorizontalLineIntersections(0, outlines);
-    while (scanline_lower < dimensions.height) : (scanline_lower += 1) {
+    while (scanline_lower <= dimensions.height) : (scanline_lower += 1) {
         const scanline_upper = scanline_lower - 1;
         const base_index = scanline_upper * dimensions.width;
         var intersections_lower = try calculateHorizontalLineIntersections(@intToFloat(f64, scanline_lower), outlines);
