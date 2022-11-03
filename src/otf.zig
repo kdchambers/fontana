@@ -721,7 +721,7 @@ fn parseGlyfTableIndexForGlyph(font: FontInfo, glyph_index: i32) !usize {
     return glyph_data_offset;
 }
 
-fn calculateGlyphBoundingBox(font: FontInfo, glyph_index: i32) !geometry.BoundingBox(i32) {
+pub fn calculateGlyphBoundingBox(font: FontInfo, glyph_index: i32) !geometry.BoundingBox(i32) {
     const section_index: usize = try parseGlyfTableIndexForGlyph(font, glyph_index);
     const font_data_start_index = @ptrToInt(&font.data[0]);
     const base_index: usize = font_data_start_index + section_index;
@@ -733,7 +733,7 @@ fn calculateGlyphBoundingBox(font: FontInfo, glyph_index: i32) !geometry.Boundin
     };
 }
 
-fn calculateGlyphBoundingBoxScaled(font: FontInfo, glyph_index: i32, scale: f64) !geometry.BoundingBox(i32) {
+pub fn calculateGlyphBoundingBoxScaled(font: FontInfo, glyph_index: i32, scale: f64) !geometry.BoundingBox(i32) {
     const unscaled = try calculateGlyphBoundingBox(font, glyph_index);
     return geometry.BoundingBox(i32){
         .x0 = @floatToInt(i32, @floor(@intToFloat(f64, unscaled.x0) * scale)),
@@ -744,6 +744,51 @@ fn calculateGlyphBoundingBoxScaled(font: FontInfo, glyph_index: i32, scale: f64)
 }
 
 pub fn rasterizeGlyph(
+    allocator: std.mem.Allocator,
+    pixel_writer: anytype,
+    font: FontInfo,
+    scale: f32,
+    codepoint: i32,
+) !Bitmap {
+    const glyph_index: i32 = @intCast(i32, findGlyphIndex(font, codepoint));
+    const vertices: []Vertex = try loadGlyphVertices(allocator, font, glyph_index);
+    defer allocator.free(vertices);
+
+    const bounding_box = try calculateGlyphBoundingBox(font, glyph_index);
+    const bounding_box_scaled = geometry.BoundingBox(i32){
+        .x0 = @floatToInt(i32, @floor(@intToFloat(f64, bounding_box.x0) * scale)),
+        .y0 = @floatToInt(i32, @floor(@intToFloat(f64, bounding_box.y0) * scale)),
+        .x1 = @floatToInt(i32, @ceil(@intToFloat(f64, bounding_box.x1) * scale)),
+        .y1 = @floatToInt(i32, @ceil(@intToFloat(f64, bounding_box.y1) * scale)),
+    };
+
+    std.debug.assert(bounding_box.y1 >= bounding_box.y0);
+    for (vertices) |*vertex| {
+        vertex.x -= @intCast(i16, bounding_box.x0);
+        vertex.y -= @intCast(i16, bounding_box.y0);
+        if (@intToEnum(VMove, vertex.kind) == .curve) {
+            vertex.control1_x -= @intCast(i16, bounding_box.x0);
+            vertex.control1_y -= @intCast(i16, bounding_box.y0);
+        }
+    }
+    const dimensions = geometry.Dimensions2D(u32){
+        .width = @intCast(u32, bounding_box_scaled.x1 - bounding_box_scaled.x0),
+        .height = @intCast(u32, bounding_box_scaled.y1 - bounding_box_scaled.y0),
+    };
+
+    const outlines = try createOutlines(allocator, vertices, @intToFloat(f64, dimensions.height), scale);
+    defer allocator.free(outlines);
+
+    var bitmap = Bitmap{
+        .width = dimensions.width,
+        .height = dimensions.height,
+        .pixels = undefined,
+    };
+    try rasterizer.rasterize(graphics.RGBA(f32), allocator, dimensions, outlines, pixel_writer);
+    return bitmap;
+}
+
+pub fn rasterizeGlyphAlloc(
     allocator: std.mem.Allocator,
     font: FontInfo,
     scale: f32,
