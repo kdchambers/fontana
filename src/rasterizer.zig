@@ -305,14 +305,16 @@ pub fn rasterize(
                         const end_x = @max(upper.start.x_intersect, lower.start.x_intersect);
                         const pixel_start = @floatToInt(usize, @floor(start_x));
                         const pixel_end = @floatToInt(usize, @floor(end_x));
-                        const is_vertical = (@floor(start_x) == @floor(end_x));
+                        const is_vertical = (pixel_start == pixel_end);
                         if (is_vertical) {
                             //
                             // The upper and lower parts of the initial intersection lie on the same pixel.
                             // Coverage of pixel is the horizonal average between both points and there are
                             // no more pixels that need anti-aliasing calculated
                             //
-                            const c = 255 - @floatToInt(u8, @divTrunc((@mod(start_x, 1.0) + @mod(end_x, 1.0)) * 255.0, 2.0));
+                            const relative_start = start_x - @floor(start_x);
+                            const relative_end = end_x - @floor(end_x);
+                            const c = 255 - @floatToInt(u8, @divTrunc((relative_start + relative_end) * 255.0, 2.0));
                             std.debug.assert(c <= 255);
                             std.debug.assert(c >= 0);
                             pixel_writer.set(.{ .x = pixel_start, .y = scanline_upper }, c);
@@ -333,15 +335,15 @@ pub fn rasterize(
                             while (i < pixel_end) : (i += 1) {
                                 last_point.x = end_x - @intToFloat(f64, i);
                                 const exit_point = geometry.interpolateBoundryPoint(entry_point, last_point);
-                                const c = (@floatToInt(u8, (255.0 * (entry_point.y + exit_point.y)) / 2.0));
-                                std.debug.assert(c <= 255);
-                                std.debug.assert(c >= 0);
-                                pixel_writer.set(.{ .x = i, .y = scanline_upper }, c);
+                                const coverage = (@floatToInt(u8, (255.0 * (entry_point.y + exit_point.y)) / 2.0));
+                                std.debug.assert(coverage <= 255);
+                                std.debug.assert(coverage >= 0);
+                                pixel_writer.set(.{ .x = i, .y = scanline_upper }, if (starts_upper) 255 - coverage else coverage);
                                 entry_point = Point(f64){ .x = 0.0, .y = exit_point.y };
                             }
                             const end_fill_anchor_point = Point(f64){
-                                .x = 1.0,
-                                .y = 1.0 - start_fill_anchor_point.x,
+                                .x = 0.0,
+                                .y = 1.0 - start_fill_anchor_point.y,
                             };
                             last_point.x = end_x - @floor(end_x);
                             std.debug.assert(i == pixel_end);
@@ -360,9 +362,11 @@ pub fn rasterize(
                         const end_x = @max(upper.end.x_intersect, lower.end.x_intersect);
                         const pixel_start = @floatToInt(usize, @floor(start_x));
                         const pixel_end = @floatToInt(usize, @floor(end_x));
-                        const is_vertical = (@floor(start_x) == @floor(end_x));
+                        const is_vertical = (pixel_start == pixel_end);
                         if (is_vertical) {
-                            const c = @floatToInt(u8, @divTrunc((@mod(start_x, 1.0) + @mod(end_x, 1.0)) * 255.0, 2.0));
+                            const relative_start = start_x - @floor(start_x);
+                            const relative_end = end_x - @floor(end_x);
+                            const c = @floatToInt(u8, @divTrunc((relative_start + relative_end) * 255.0, 2.0));
                             std.debug.assert(c <= 255);
                             std.debug.assert(c >= 0);
                             pixel_writer.set(.{ .x = pixel_start, .y = scanline_upper }, c);
@@ -381,15 +385,15 @@ pub fn rasterize(
                             while (i < pixel_end) : (i += 1) {
                                 last_point.x = end_x - @intToFloat(f64, i);
                                 const exit_point = geometry.interpolateBoundryPoint(entry_point, last_point);
-                                const c = 255 - (@floatToInt(u8, (255.0 * (entry_point.y + exit_point.y)) / 2.0));
-                                std.debug.assert(c <= 255);
-                                std.debug.assert(c >= 0);
-                                pixel_writer.set(.{ .x = i, .y = scanline_upper }, c);
+                                const coverage = (@floatToInt(u8, (255.0 * (entry_point.y + exit_point.y)) / 2.0));
+                                std.debug.assert(coverage <= 255);
+                                std.debug.assert(coverage >= 0);
+                                pixel_writer.set(.{ .x = i, .y = scanline_upper }, if (starts_upper) coverage else 255 - coverage);
                                 entry_point = Point(f64){ .x = 0.0, .y = exit_point.y };
                             }
                             const end_fill_anchor_point = Point(f64){
-                                .x = 1.0,
-                                .y = 1.0 - start_fill_anchor_point.x,
+                                .x = 0.0,
+                                .y = 1.0 - start_fill_anchor_point.y,
                             };
                             last_point.x = end_x - @floor(end_x);
                             std.debug.assert(i == pixel_end);
