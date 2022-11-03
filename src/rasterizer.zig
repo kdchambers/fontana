@@ -295,8 +295,8 @@ pub fn rasterize(
                     //
                     const upper = upper_opt.?;
                     const lower = lower_opt.?;
-                    var fill_start: i32 = std.math.maxInt(i32);
-                    var fill_end: i32 = 0;
+                    var fill_start: usize = std.math.maxInt(usize);
+                    var fill_end: usize = 0;
                     {
                         //
                         // Start Anti-aliasing
@@ -350,7 +350,7 @@ pub fn rasterize(
                             std.debug.assert(c >= 0);
                             pixel_writer.set(.{ .x = i, .y = scanline_upper }, c);
                         }
-                        fill_start = @floatToInt(i32, @floor(end_x)) + 1;
+                        fill_start = pixel_end + 1;
                     }
                     {
                         //
@@ -398,7 +398,9 @@ pub fn rasterize(
                             std.debug.assert(c >= 0);
                             pixel_writer.set(.{ .x = i, .y = scanline_upper }, c);
                         }
-                        fill_end = @floatToInt(i32, @floor(start_x)) - 1;
+                        if (pixel_start > 0) {
+                            fill_end = pixel_start - 1;
+                        }
                     }
                     //
                     // Inner fill
