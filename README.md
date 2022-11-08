@@ -2,46 +2,27 @@
 
 *OpenType and TrueType font loading and rasterizing library*
 
+**Fontana is in development and not ready for use in projects**
+
 ## Usage
 
-See this compilable-ish example of how to use fontana to load some glyphs from a .ttf file.
+This is the high-level overview of how to currently use fontana. It's also possible to render a single glyph to a contigious texture buffer, but generating a font atlas is the most common use-case.
 
-    const std = @import("std");
-    const fontana = @import("fontana.zig");
+    const ttf_buffer = loadTTF("fontname.ttf");
+    var font = try fontana.otf.parseFromBytes(ttf_buffer);
+    var font_atlas: fontana.Atlas(.{
+        .pixel_format = .rgba_f32,
+        .encoding = .ascii,
+    }) = undefined;
 
-    const font_path = "assets/font_file.ttf";
-    const font_size_pixels = 28;
+    const codepoints = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890";
+    //
+    // This will write the font bitmap atlas to texture_buffer
+    //
+    try font_atlas.init(allocator, font, codepoints, 80, texture_buffer, texture_dimensions);
+    defer font_atlas.deinit(allocator);
 
-    pub fn main() !void {
-        var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-        defer _ = gpa.deinit();
-        var allocator = gpa.allocator();
-
-        const file_handle = try std.fs.cwd().openFile(font_path, .{ .mode = .read_only });
-        defer file_handle.close();
-
-        const file_size = (try file_handle.stat()).size;
-        var ttf_buffer = try allocator.alloc(u8, file_size);
-        _ = try file_handle.readAll(ttf_buffer);
-
-        const font = try fontana.parseOTF(ttf_buffer);
-        const scale = fontana.scaleForPixelHeight(font, font_size_pixels);
-
-        const char_list = "abc";
-        for (char_list) |char| {
-            const bitmap = try fontana.createGlyphBitmap(allocator, font, scale, char);
-            defer allocator.free(bitmap.pixels);
-            std.log.info("Loaded bitmap of '{c}' with dimensions: ({d}, {d})", .{
-                char,
-                bitmap.width,
-                bitmap.height,
-            });
-
-            //
-            // Do something with the image bitmap
-            //
-        }
-    }
+For a runnable example, see [fontana-example](https://github.com/kdchambers/fontana-examples). Example projects and binary assets are not to be checked into the main repo to keep it small.
 
 ## License
 
