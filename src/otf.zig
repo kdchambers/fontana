@@ -829,7 +829,9 @@ pub fn rasterizeGlyphAlloc(
         .pixels = undefined,
     };
     const pixel_count = @intCast(usize, dimensions.width) * dimensions.height;
-    bitmap.pixels = (try allocator.alloc(graphics.RGBA(f32), pixel_count)).ptr;
+    const pixels = try allocator.alloc(graphics.RGBA(f32), pixel_count);
+    bitmap.pixels = pixels.ptr;
+    std.mem.set(graphics.RGBA(f32), pixels, .{ .r = 0.0, .g = 0.0, .b = 0.0, .a = 0.0 });
     var pixel_writer = rasterizer.SubTexturePixelWriter(graphics.RGBA(f32)){
         .texture_width = dimensions.width,
         .write_extent = .{
@@ -1189,10 +1191,11 @@ fn createOutlines(allocator: std.mem.Allocator, vertices: []Vertex, height: f64,
                     const point_from = Point(f64){ .x = @intToFloat(f64, from.x) * scale, .y = height - (@intToFloat(f64, from.y) * scale) };
                     const point_to = Point(f64){ .x = @intToFloat(f64, to.x) * scale, .y = height - (@intToFloat(f64, to.y) * scale) };
                     const dist = geometry.distanceBetweenPoints(point_from, point_to);
+                    const t_per_pixel: f64 = 1.0 / dist;
                     outlines[outline_index].segments[outline_segment_index] = OutlineSegment{
                         .from = point_from,
                         .to = point_to,
-                        .t_per_pixel = 1.0 / dist,
+                        .t_per_pixel = if (t_per_pixel <= 1.0) t_per_pixel else 1.0,
                     };
                     vertex_index += 1;
                     outline_segment_index += 1;
@@ -1225,7 +1228,8 @@ fn createOutlines(allocator: std.mem.Allocator, vertices: []Vertex, height: f64,
                         }
                         break :blk accumulator;
                     };
-                    segment_ptr.t_per_pixel = (1.0 / outline_length_pixels);
+                    const t_per_pixel: f64 = (1.0 / outline_length_pixels);
+                    segment_ptr.t_per_pixel = if (t_per_pixel <= 1.0) t_per_pixel else 1.0;
                     vertex_index += 1;
                     outline_segment_index += 1;
                 },
