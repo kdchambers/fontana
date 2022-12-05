@@ -137,6 +137,7 @@ pub fn quadraticBezierPlaneIntersections(bezier: BezierQuadratic, horizontal_axi
 }
 
 pub fn triangleArea(p1: Point(f64), p2: Point(f64), p3: Point(f64)) f64 {
+    if (p1.x == p2.x and p2.x == p3.x) return 0.0;
     return @fabs((p1.x * (p2.y - p3.y)) + (p2.x * (p3.y - p1.y)) + (p3.x * (p1.y - p2.y))) / 2.0;
 }
 
@@ -189,6 +190,17 @@ pub fn interpolateBoundryPoint(inside: Point(f64), outside: Point(f64)) Point(f6
         .x = inside.x + (x_difference * t),
         .y = inside.y + (y_difference * t),
     };
+}
+
+test "triangleArea" {
+    const expect = std.testing.expect;
+    {
+        const p1 = Point(f64){ .x = 1.0, .y = 10.0 };
+        const p2 = Point(f64){ .x = 1.0, .y = 20.0 };
+        const p3 = Point(f64){ .x = 1.0, .y = 30.0 };
+        const area = triangleArea(p1, p2, p3);
+        try expect(area == 0.0);
+    }
 }
 
 test "quadraticBezierPoint" {
