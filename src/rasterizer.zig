@@ -252,8 +252,11 @@ pub fn SubTexturePixelWriter(comptime PixelType: type) type {
         pixels: [*]PixelType,
 
         pub inline fn add(self: @This(), coords: geometry.Coordinates2D(usize), coverage: f64, mask: [3]f32) void {
+            _ = mask;
             const x = coords.x;
             const y = coords.y;
+            std.debug.assert(coverage >= 0);
+            std.debug.assert(coverage <= 1);
             std.debug.assert(x >= 0);
             std.debug.assert(x < self.write_extent.width);
             std.debug.assert(y >= 0);
@@ -264,16 +267,17 @@ pub fn SubTexturePixelWriter(comptime PixelType: type) type {
             switch (PixelType) {
                 graphics.RGBA(f32) => {
                     const c = @floatCast(f32, coverage);
-                    self.pixels[index].r += c * mask[0];
-                    self.pixels[index].g += c * mask[1];
-                    self.pixels[index].b += c * mask[2];
-                    self.pixels[index].a = 1.0;
+                    self.pixels[index].r = 0.8;
+                    self.pixels[index].g = 0.8;
+                    self.pixels[index].b = 0.8;
+                    self.pixels[index].a += c;
                 },
                 else => unreachable,
             }
         }
 
         pub inline fn set(self: @This(), coords: geometry.Coordinates2D(usize), coverage: f64, mask: [3]f32) void {
+            _ = mask;
             const x = coords.x;
             const y = coords.y;
             std.debug.assert(x >= 0);
@@ -286,10 +290,10 @@ pub fn SubTexturePixelWriter(comptime PixelType: type) type {
             switch (PixelType) {
                 graphics.RGBA(f32) => {
                     const c = @floatCast(f32, coverage);
-                    self.pixels[index].r = c * mask[0];
-                    self.pixels[index].g = c * mask[1];
-                    self.pixels[index].b = c * mask[2];
-                    self.pixels[index].a = 1.0;
+                    self.pixels[index].r = 0.8;
+                    self.pixels[index].g = 0.8;
+                    self.pixels[index].b = 0.8;
+                    self.pixels[index].a = c;
                 },
                 else => unreachable,
             }
@@ -397,25 +401,6 @@ const OutlineSamplerUnbounded = struct {
     }
 };
 
-const ScanlineBounds = struct {
-    upper: f64,
-    lower: f64,
-
-    pub inline fn pixelBase(self: @This()) usize {
-        return @floatToInt(usize, @floor(self.upper));
-    }
-
-    pub inline fn distance(self: @This()) f64 {
-        return self.upper + self.lower;
-    }
-
-    pub inline fn pixelWeight(self: @This()) f64 {
-        const result = self.upper + self.lower;
-        std.debug.assert(result <= 1.0);
-        return result;
-    }
-};
-
 fn assertNormalized(point: Point(f64)) void {
     std.debug.assert(point.x <= 1.0);
     std.debug.assert(point.x >= 0.0);
@@ -438,7 +423,7 @@ pub fn rasterize(
     if (PixelType != graphics.RGBA(f32)) {
         @compileError("rasterize function only supports bitmaps of RGBA(f32)");
     }
-    const scanline_increment: f64 = 1.0;
+    const scanline_increment: f64 = 0.5;
     const scanlines_required = @floatToInt(usize, @divExact(@intToFloat(f64, dimensions.height), scanline_increment));
     var scanline_i: usize = 0;
     var intersections_upper = try calculateHorizontalLineIntersections(0, outlines);
@@ -459,6 +444,9 @@ pub fn rasterize(
         for (connected_intersections) |intersect_pair| {
             const upper_opt = intersect_pair.upper;
             const lower_opt = intersect_pair.lower;
+            const y_low = scanline_upper - @floor(scanline_upper);
+            const y_high = scanline_lower - @floor(scanline_upper);
+            std.debug.assert(y_high - y_low == scanline_increment);
             if (upper_opt != null and lower_opt != null) {
                 //
                 // Ideal situation, we have two points on upper and lower scanline (4 in total)
@@ -482,8 +470,8 @@ pub fn rasterize(
                     const outline_index = upper.start.outline_index;
                     std.debug.assert(outline_index == lower.start.outline_index);
                     doAntiAliasing(
-                        Point(f64){ .x = left_x, .y = if (upper_is_left) 0.0 else 1.0 },
-                        Point(f64){ .x = right_x, .y = if (upper_is_left) 1.0 else 0.0 },
+                        Point(f64){ .x = left_x, .y = if (upper_is_left) y_low else y_high },
+                        Point(f64){ .x = right_x, .y = if (upper_is_left) y_high else y_low },
                         intersect_left.t,
                         intersect_right.t,
                         pixel_y,
@@ -506,8 +494,8 @@ pub fn rasterize(
                     const outline_index = upper.end.outline_index;
                     std.debug.assert(outline_index == lower.end.outline_index);
                     doAntiAliasing(
-                        Point(f64){ .x = left_x, .y = if (upper_is_left) 0.0 else 1.0 },
-                        Point(f64){ .x = right_x, .y = if (upper_is_left) 1.0 else 0.0 },
+                        Point(f64){ .x = left_x, .y = if (upper_is_left) y_low else y_high },
+                        Point(f64){ .x = right_x, .y = if (upper_is_left) y_high else y_low },
                         intersect_left.t,
                         intersect_right.t,
                         pixel_y,
@@ -524,9 +512,9 @@ pub fn rasterize(
                 //
                 var i: usize = @intCast(usize, fill_start);
                 while (i <= @intCast(usize, fill_end)) : (i += 1) {
-                    pixel_writer.set(
+                    pixel_writer.add(
                         .{ .x = i, .y = pixel_y },
-                        1.0,
+                        1.0 * scanline_increment,
                         pixel_mask.normal,
                     );
                 }
@@ -539,15 +527,14 @@ pub fn rasterize(
                 const invert_coverage = intersect_pair.flags.invert_coverage;
                 const outline_index = pair.start.outline_index;
                 const segments = outlines[outline_index].segments;
-                const scanline_bounds = ScanlineBounds{
-                    .upper = scanline_upper,
-                    .lower = scanline_lower,
-                };
+
                 rasterize2Point(
                     pair,
-                    if (is_upper) 0 else 1,
+                    pixel_y,
+                    y_low,
+                    y_high,
+                    if (is_upper) y_low else y_high,
                     invert_coverage,
-                    scanline_bounds,
                     segments,
                     pixel_writer,
                 );
@@ -571,6 +558,10 @@ fn doAntiAliasing(
     pixel_writer: anytype,
     invert: bool,
 ) void {
+    const y_low = @min(point_left.y, point_right.y);
+    const y_high = @max(point_left.y, point_right.y);
+    const coverage_weight = y_high - y_low;
+
     const pixel_start = @floatToInt(usize, @floor(point_left.x));
     const pixel_end = @floatToInt(usize, @floor(point_right.x));
     if (pixel_start == pixel_end) {
@@ -581,12 +572,12 @@ fn doAntiAliasing(
         //
         const relative_start = point_left.x - @floor(point_left.x);
         const relative_end = point_right.x - @floor(point_right.x);
-        const coverage = ((relative_start + relative_end) / 2.0);
-        std.debug.assert(coverage <= 1.0);
+        const coverage = coverage_weight * ((relative_start + relative_end) / 2.0);
+        std.debug.assert(coverage <= coverage_weight);
         std.debug.assert(coverage >= 0.0);
         pixel_writer.add(
             .{ .x = pixel_start, .y = pixel_y },
-            if (invert) coverage else 1.0 - coverage,
+            if (invert) coverage else coverage_weight - coverage,
             pixel_mask.normal,
         );
         return;
@@ -626,13 +617,13 @@ fn doAntiAliasing(
             const interpolated_point = geometry.interpolateBoundryPoint(previous_point, sampled_point);
             assertNormalized(interpolated_point);
             coverage += geometry.triangleArea(interpolated_point, previous_point, fill_anchor_point);
-            if (coverage > 1.0) {
+            if (coverage > coverage_weight) {
                 std.log.warn("Coverage set to 1.0 from {d} in g_aa next pixel", .{coverage});
             }
-            coverage = @min(coverage, 1.0);
+            coverage = @min(coverage, coverage_weight);
             pixel_writer.add(
                 .{ .x = pixel_x, .y = pixel_y },
-                if (invert) 1.0 - coverage else coverage,
+                if (invert) coverage_weight - coverage else coverage,
                 pixel_mask.normal,
             );
 
@@ -640,7 +631,7 @@ fn doAntiAliasing(
             pixel_x += 1;
             origin.x = @intToFloat(f64, pixel_x);
 
-            if (sampled_point.y > 1.0 or sampled_point.y < 0) {
+            if (sampled_point.y > y_high or sampled_point.y < y_low) {
                 break;
             }
 
@@ -654,7 +645,7 @@ fn doAntiAliasing(
             continue;
         }
 
-        if (sampled_point.y > 1.0 or sampled_point.y < 0.0) break;
+        if (sampled_point.y > y_high or sampled_point.y < y_low) break;
 
         coverage += geometry.triangleArea(sampled_point, previous_point, fill_anchor_point);
         previous_point = sampled_point;
@@ -674,69 +665,73 @@ fn doAntiAliasing(
 
     coverage += geometry.triangleArea(end_point, previous_point, fill_anchor_point);
     coverage += geometry.triangleArea(.{ .x = 1.0, .y = point_right.y }, end_point, fill_anchor_point);
-    if (coverage > 1.0) {
+    if (coverage > coverage_weight) {
         std.log.warn("Coverage set to 1.0 from {d} in g_aa next pixel", .{coverage});
     }
-    coverage = @min(coverage, 1.0);
+    coverage = @min(coverage, coverage_weight);
     pixel_writer.add(
         .{ .x = pixel_end, .y = pixel_y },
-        if (invert) 1.0 - coverage else coverage,
+        if (invert) coverage_weight - coverage else coverage,
         pixel_mask.normal,
     );
 }
 
 fn rasterize2Point(
     pair: YIntersectionPair,
-    relative_y_baseline: f64,
+    y_index: usize,
+    y_low: f64,
+    y_high: f64,
+    y_intersect: f64,
     invert: bool,
-    scanline_bounds: ScanlineBounds,
     segments: []OutlineSegment,
     pixel_writer: anytype,
 ) void {
     const outline_index = pair.start.outline_index;
     std.debug.assert(outline_index == pair.end.outline_index);
-    const sample_t_max = @intToFloat(f64, segments.len);
+
     var sampler = OutlineSamplerUnbounded{
         .segments = segments,
         .t_start = pair.start.t,
-        .t_max = sample_t_max,
-        .samples_per_pixel = 6,
+        .t_max = @intToFloat(f64, segments.len),
+        .samples_per_pixel = 3,
         .t_current = undefined,
         .t_direction = undefined,
         .t_increment = undefined,
     };
     sampler.init(pair.end.t);
 
+    const coverage_weight = y_high - y_low;
     const pixel_start = @floatToInt(usize, @floor(pair.start.x_intersect));
     const pixel_end = @floatToInt(usize, @floor(pair.end.x_intersect));
-    const base_y = scanline_bounds.pixelBase();
 
+    // TODO: This no longer works due to sub-pixel scanline
+    //       calculation. Fix regression
     // Reset line in case it was part of a fill
-    var i: usize = pixel_start;
-    while (i <= pixel_end) : (i += 1) {
-        pixel_writer.set(
-            .{ .x = i, .y = base_y },
-            0,
-            pixel_mask.normal,
-        );
-    }
+    // var i: usize = pixel_start;
+    // while (i <= pixel_end) : (i += 1) {
+    //     pixel_writer.set(
+    //         .{ .x = i, .y = base_y },
+    //         0,
+    //         pixel_mask.normal,
+    //     );
+    // }
 
     std.debug.assert(pixel_start <= pixel_end);
     var pixel_x = pixel_start;
 
     var fill_anchor_point = Point(f64){
         .x = 1.0,
-        .y = relative_y_baseline,
+        .y = y_intersect,
     };
     var previous_sampled_point = Point(f64){
         .x = pair.start.x_intersect - @intToFloat(f64, pixel_start),
-        .y = relative_y_baseline,
+        .y = y_intersect,
     };
 
     var coverage: f64 = 0.0;
     var origin = Point(f64){
         .x = @intToFloat(f64, pixel_start),
-        .y = @intToFloat(f64, base_y),
+        .y = @intToFloat(f64, y_index),
     };
 
     while (true) {
@@ -760,15 +755,15 @@ fn rasterize2Point(
             //
             coverage += geometry.triangleArea(fill_anchor_point, interpolated_point, .{ .x = 1.0, .y = fill_anchor_point.y });
 
-            if (coverage > 1.0) {
+            if (coverage > coverage_weight) {
                 std.log.warn("Clamping coverage from {d}", .{coverage});
-                coverage = 1.0;
+                coverage = coverage_weight;
             }
             std.debug.assert(coverage >= 0.0);
-            std.debug.assert(coverage <= 1.0);
+            std.debug.assert(coverage <= coverage_weight);
             pixel_writer.add(
-                .{ .x = pixel_x, .y = base_y },
-                if (invert) 1.0 - coverage else coverage,
+                .{ .x = pixel_x, .y = y_index },
+                if (invert) coverage_weight - coverage else coverage,
                 pixel_mask.normal,
             );
 
@@ -780,7 +775,7 @@ fn rasterize2Point(
             previous_sampled_point = .{ .x = 0.0, .y = interpolated_point.y };
             fill_anchor_point.x = 0.0;
 
-            if (sampled_point.y > 1.0 or sampled_point.y < 0.0) {
+            if (sampled_point.y > y_high or sampled_point.y < y_low) {
                 break;
             }
 
@@ -795,14 +790,14 @@ fn rasterize2Point(
             continue;
         }
 
-        if (sampled_point.y > 1.0 or sampled_point.y < 0.0) {
+        if (sampled_point.y > y_high or sampled_point.y < y_low) {
             break;
         }
 
         coverage += geometry.triangleArea(sampled_point, previous_sampled_point, fill_anchor_point);
 
         std.debug.assert(coverage >= 0.0);
-        std.debug.assert(coverage <= 1.0);
+        std.debug.assert(coverage <= coverage_weight);
         previous_sampled_point = sampled_point;
     }
 
@@ -814,18 +809,18 @@ fn rasterize2Point(
     }
     const end_point = Point(f64){
         .x = pair.end.x_intersect - @intToFloat(f64, pixel_end),
-        .y = relative_y_baseline,
+        .y = y_intersect,
     };
     assertNormalized(end_point);
 
     coverage += geometry.triangleArea(end_point, previous_sampled_point, fill_anchor_point);
-    if (coverage > 1.0) {
+    if (coverage > coverage_weight) {
         std.log.warn("Coverage set to 1.0 from {d} in g_aa next pixel", .{coverage});
     }
-    coverage = @min(coverage, 1.0);
+    coverage = @min(coverage, coverage_weight);
     pixel_writer.add(
-        .{ .x = pixel_end, .y = base_y },
-        if (invert) 1.0 - coverage else coverage,
+        .{ .x = pixel_end, .y = y_index },
+        if (invert) coverage_weight - coverage else coverage,
         pixel_mask.normal,
     );
 }
