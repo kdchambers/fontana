@@ -1144,7 +1144,10 @@ fn loadGlyphVertices(allocator: std.mem.Allocator, font: FontInfo, glyph_index: 
         unreachable;
     }
 
-    return allocator.shrink(vertices, vertices_count);
+    const resize_sucessful = allocator.resize(vertices, vertices_count);
+    std.debug.assert(resize_sucessful);
+
+    return vertices[0..vertices_count];
 }
 
 /// Converts array of Vertex into array of Outline (Our own format)
