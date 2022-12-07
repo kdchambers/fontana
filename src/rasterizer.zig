@@ -728,18 +728,6 @@ fn rasterize2Point(
     const pixel_start = @floatToInt(usize, @floor(pair.start.x_intersect));
     const pixel_end = @floatToInt(usize, @floor(pair.end.x_intersect));
 
-    // TODO: This no longer works due to sub-pixel scanline
-    //       calculation. Fix regression
-    // Reset line in case it was part of a fill
-    // var i: usize = pixel_start;
-    // while (i <= pixel_end) : (i += 1) {
-    //     pixel_writer.set(
-    //         .{ .x = i, .y = base_y },
-    //         0,
-    //         pixel_mask.normal,
-    //     );
-    // }
-
     std.debug.assert(pixel_start <= pixel_end);
     var pixel_x = pixel_start;
 

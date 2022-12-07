@@ -42,6 +42,13 @@ pub fn BoundingBox(comptime T: type) type {
     };
 }
 
+pub fn Scale2D(comptime BaseType: type) type {
+    return struct {
+        horizontal: BaseType,
+        vertical: BaseType,
+    };
+}
+
 pub const BezierQuadratic = extern struct {
     a: Point(f64),
     b: Point(f64),

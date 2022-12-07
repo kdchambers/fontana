@@ -69,15 +69,15 @@ pub fn Atlas(comptime config: AtlasConfiguration) type {
         cell_dimensions: geometry.Dimensions2D(u16),
 
         /// List of charactors contained in the atlas
-        codepoint_list: []const CodepointType,
+        codepoint_list: []CodepointType,
 
-        inline fn indexForCodepoint(self: @This(), codepoint: CodepointType) !GlyphIndex {
+        inline fn indexForCodepoint(self: @This(), codepoint: CodepointType) ?GlyphIndex {
             for (self.codepoint_list) |cp, cp_i| {
                 if (cp == codepoint) {
-                    return cp_i;
+                    return @intCast(GlyphIndex, cp_i);
                 }
             }
-            return error.CodepointNotFound;
+            return null;
         }
 
         /// Memory required for Atlas itself (Not Texure)
@@ -111,27 +111,48 @@ pub fn Atlas(comptime config: AtlasConfiguration) type {
             return error.KerningEntryMatchNotFound;
         }
 
-        pub fn writeTextDrawVertices(
+        pub fn drawText(
             self: @This(),
-            comptime VertexWriterInterface: type,
-            writer_interface: VertexWriterInterface,
+            writer_interface: anytype,
             codepoint_list: []const CodepointType,
             placement: geometry.Coordinates2D(f32),
-            scale_for_window: geometry.Scale2D(f32),
+            scale_factor: geometry.Scale2D(f32),
         ) !void {
-            _ = scale_for_window;
-            _ = placement;
-            _ = codepoint_list;
-            _ = writer_interface;
-            _ = self;
+            var x_increment: f32 = 0.0;
+            var cursor = geometry.Coordinates2D(f32){ .x = 0, .y = 0 };
+            for (codepoint_list) |codepoint| {
+                if (codepoint == '\n') {
+                    cursor.y += 1;
+                    cursor.x = 0;
+                    continue;
+                }
+
+                if (codepoint == 0 or codepoint == 255 or codepoint == 254) {
+                    continue;
+                }
+
+                const line_height: f32 = 0.01;
+                if (self.indexForCodepoint(codepoint)) |glyph_index| {
+                    const texture_extent = self.textureExtentForGlyph(glyph_index);
+                    const glyph_dimensions = self.dimension_list[glyph_index];
+                    const y_offset = @intToFloat(f32, self.vertical_offset_list[glyph_index]) * scale_factor.vertical;
+                    const screen_extent = geometry.Extent2D(f32){
+                        .x = placement.x + x_increment,
+                        .y = placement.y + y_offset + (line_height * cursor.y),
+                        .width = @intToFloat(f32, glyph_dimensions.width) * scale_factor.horizontal,
+                        .height = @intToFloat(f32, glyph_dimensions.height) * scale_factor.vertical,
+                    };
+                    try writer_interface.write(screen_extent, texture_extent);
+                    x_increment += @intToFloat(f32, glyph_dimensions.width) * scale_factor.horizontal;
+                }
+            }
         }
 
-        fn extentForCodepoint(self: @This(), codepoint: CodepointType) !geometry.Extent2D(f32) {
-            const codepoint_index = try indexForCodepoint(codepoint);
-            const codepoint_dimensions = self.dimension_list[codepoint_index];
+        fn textureExtentForGlyph(self: @This(), glyph_index: GlyphIndex) geometry.Extent2D(f32) {
+            const codepoint_dimensions = self.dimension_list[glyph_index];
             const altas_coordinates = geometry.Coordinates2D(usize){
-                .x = (codepoint_index % self.row_cell_count) * self.cell_dimensions.width,
-                .y = @divFloor(codepoint_index, self.row_cell_count) * self.cell_dimensions.height,
+                .x = (glyph_index % self.row_cell_count) * self.cell_dimensions.width,
+                .y = @divFloor(glyph_index, self.row_cell_count) * self.cell_dimensions.height,
             };
             const texture_dimensions = geometry.Dimensions2D(f32){
                 .width = @intToFloat(f32, self.texture_dimensions.width),
@@ -143,6 +164,13 @@ pub fn Atlas(comptime config: AtlasConfiguration) type {
                 .x = @intToFloat(f32, altas_coordinates.x) / texture_dimensions.width,
                 .y = @intToFloat(f32, altas_coordinates.y) / texture_dimensions.height,
             };
+        }
+
+        fn textureExtentForCodepoint(self: @This(), codepoint: CodepointType) ?geometry.Extent2D(f32) {
+            if (self.indexForCodepoint(codepoint)) |glyph_index| {
+                return self.textureExtentForGlyph(glyph_index);
+            }
+            return null;
         }
 
         /// Rasterizes glyphs for all characters in char_list into texture_buffer
@@ -165,7 +193,8 @@ pub fn Atlas(comptime config: AtlasConfiguration) type {
             self.dimension_list = try allocator.alloc(geometry.Dimensions2D(u32), codepoint_list.len);
             self.kerning_jump_array = try allocator.alloc(GlyphIndex, codepoint_list.len);
             self.kerning_indices = try allocator.alloc(KerningIndex, codepoint_list.len);
-            self.codepoint_list = codepoint_list;
+            self.codepoint_list = try allocator.alloc(CodepointType, codepoint_list.len);
+            std.mem.copy(CodepointType, self.codepoint_list, codepoint_list);
 
             const scale = otf.scaleForPixelHeight(font, size_pixels);
             {
@@ -210,6 +239,7 @@ pub fn Atlas(comptime config: AtlasConfiguration) type {
             allocator.free(self.dimension_list);
             allocator.free(self.kerning_jump_array);
             allocator.free(self.kerning_indices);
+            allocator.free(self.codepoint_list);
         }
     };
 }
