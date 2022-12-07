@@ -276,6 +276,30 @@ pub fn SubTexturePixelWriter(comptime PixelType: type) type {
             }
         }
 
+        pub inline fn sub(self: @This(), coords: geometry.Coordinates2D(usize), coverage: f64) void {
+            const x = coords.x;
+            const y = coords.y;
+            std.debug.assert(coverage >= 0);
+            std.debug.assert(coverage <= 1);
+            std.debug.assert(x >= 0);
+            std.debug.assert(x < self.write_extent.width);
+            std.debug.assert(y >= 0);
+            std.debug.assert(y < self.write_extent.height);
+            const global_x = self.write_extent.x + x;
+            const global_y = self.write_extent.y + y;
+            const index = global_x + (self.texture_width * global_y);
+            switch (PixelType) {
+                graphics.RGBA(f32) => {
+                    const c = @floatCast(f32, coverage);
+                    self.pixels[index].r = 0.8;
+                    self.pixels[index].g = 0.8;
+                    self.pixels[index].b = 0.8;
+                    self.pixels[index].a -= c;
+                },
+                else => unreachable,
+            }
+        }
+
         pub inline fn set(self: @This(), coords: geometry.Coordinates2D(usize), coverage: f64, mask: [3]f32) void {
             _ = mask;
             const x = coords.x;
@@ -682,7 +706,7 @@ fn rasterize2Point(
     y_low: f64,
     y_high: f64,
     y_intersect: f64,
-    invert: bool,
+    subtract: bool,
     segments: []OutlineSegment,
     pixel_writer: anytype,
 ) void {
@@ -761,11 +785,18 @@ fn rasterize2Point(
             }
             std.debug.assert(coverage >= 0.0);
             std.debug.assert(coverage <= coverage_weight);
-            pixel_writer.add(
-                .{ .x = pixel_x, .y = y_index },
-                if (invert) coverage_weight - coverage else coverage,
-                pixel_mask.normal,
-            );
+            if (subtract) {
+                pixel_writer.sub(
+                    .{ .x = pixel_x, .y = y_index },
+                    coverage,
+                );
+            } else {
+                pixel_writer.add(
+                    .{ .x = pixel_x, .y = y_index },
+                    coverage,
+                    pixel_mask.normal,
+                );
+            }
 
             //
             // Adjust for next pixel
@@ -818,11 +849,18 @@ fn rasterize2Point(
         std.log.warn("Coverage set to 1.0 from {d} in g_aa next pixel", .{coverage});
     }
     coverage = @min(coverage, coverage_weight);
-    pixel_writer.add(
-        .{ .x = pixel_end, .y = y_index },
-        if (invert) coverage_weight - coverage else coverage,
-        pixel_mask.normal,
-    );
+    if (subtract) {
+        pixel_writer.sub(
+            .{ .x = pixel_x, .y = y_index },
+            coverage,
+        );
+    } else {
+        pixel_writer.add(
+            .{ .x = pixel_x, .y = y_index },
+            coverage,
+            pixel_mask.normal,
+        );
+    }
 }
 
 /// Takes a list of upper and lower intersections, and groups them into
