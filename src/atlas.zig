@@ -205,7 +205,7 @@ pub fn Atlas(comptime config: AtlasConfiguration) type {
                     var dimension = &self.dimension_list[codepoint_i];
                     dimension.* = try otf.getRequiredDimensions(font, codepoint, scale);
                     const bounding_box = try otf.calculateGlyphBoundingBoxScaled(font, otf.findGlyphIndex(font, codepoint), scale);
-                    self.vertical_offset_list[codepoint_i] = @floatCast(f32, bounding_box.y0);
+                    self.vertical_offset_list[codepoint_i] = @floatCast(f32, -bounding_box.y0);
                     max_width = @max(max_width, dimension.width);
                     max_height = @max(max_height, dimension.height);
                 }
