@@ -295,19 +295,20 @@ pub const SectionRange = extern struct {
 };
 
 pub const DataSections = extern struct {
+    cmap: SectionRange = .{},
     dsig: SectionRange = .{},
-    loca: SectionRange = .{},
-    head: SectionRange = .{},
     glyf: SectionRange = .{},
+    gpos: SectionRange = .{},
+    head: SectionRange = .{},
     hhea: SectionRange = .{},
     hmtx: SectionRange = .{},
-    hvar: SectionRange = .{},
     kern: SectionRange = .{},
-    gpos: SectionRange = .{},
-    svg: SectionRange = .{},
+    loca: SectionRange = .{},
     maxp: SectionRange = .{},
-    cmap: SectionRange = .{},
     name: SectionRange = .{},
+    os2: SectionRange = .{},
+    svg: SectionRange = .{},
+    vtmx: SectionRange = .{},
 };
 
 const TableType = enum { cmap, loca, head, glyf, hhea, hmtx, kern, gpos, maxp };
@@ -360,6 +361,12 @@ pub const FontInfo = extern struct {
     index_map: i32 = 0,
     index_to_loc_format: i32 = 0,
     cmap_encoding_table_offset: u32 = 0,
+
+    ascender: i16,
+    descender: i16,
+    line_gap: i16,
+    break_char: u16,
+    default_char: u16,
 };
 
 const Buffer = extern struct {
@@ -367,6 +374,11 @@ const Buffer = extern struct {
     len: u32,
     cursor: u32 = 0,
     size: u32 = 0,
+};
+
+const VMetric = extern struct {
+    advance_height: u16,
+    topside_bearing: i16,
 };
 
 pub fn parseFromBytes(font_data: []u8) !FontInfo {
@@ -423,12 +435,6 @@ pub fn parseFromBytes(font_data: []u8) !FontInfo {
                 continue;
             }
 
-            if (std.mem.eql(u8, "hvar", tag)) {
-                data_sections.hvar.offset = offset;
-                data_sections.hvar.length = length;
-                continue;
-            }
-
             if (std.mem.eql(u8, "glyf", tag)) {
                 data_sections.glyf.offset = offset;
                 data_sections.glyf.length = length;
@@ -470,7 +476,34 @@ pub fn parseFromBytes(font_data: []u8) !FontInfo {
                 data_sections.name.length = length;
                 continue;
             }
+
+            if (std.mem.eql(u8, "OS/2", tag)) {
+                data_sections.os2.offset = offset;
+                data_sections.os2.length = length;
+                continue;
+            }
+
+            if (std.mem.eql(u8, "vtmx", tag)) {
+                data_sections.vtmx.offset = offset;
+                data_sections.vtmx.length = length;
+                continue;
+            }
         }
+    }
+
+    if (data_sections.os2.isNull()) {
+        std.log.err("Required data section `OS/2` not found", .{});
+        return error.RequiredSectionHeadMissing;
+    }
+
+    if (data_sections.loca.isNull()) {
+        std.log.err("Required data section `loca` not found", .{});
+        return error.RequiredSectionHeadMissing;
+    }
+
+    if (data_sections.glyf.isNull()) {
+        std.log.err("Required data section `glyf` not found", .{});
+        return error.RequiredSectionHeadMissing;
     }
 
     var font_info = FontInfo{
@@ -479,7 +512,35 @@ pub fn parseFromBytes(font_data: []u8) !FontInfo {
         .hhea = data_sections.hhea,
         .loca = data_sections.loca,
         .glyf = data_sections.glyf,
+        .ascender = undefined,
+        .descender = undefined,
+        .line_gap = undefined,
+        .break_char = undefined,
+        .default_char = undefined,
     };
+
+    {
+        var fixed_buffer_stream = std.io.FixedBufferStream([]const u8){
+            .buffer = font_data,
+            .pos = data_sections.os2.offset,
+        };
+        var reader = fixed_buffer_stream.reader();
+
+        const version = try reader.readIntBig(u16);
+        // TODO: Implement other versions
+        std.debug.assert(version == 4);
+
+        try reader.skipBytes(66, .{});
+
+        font_info.ascender = try reader.readIntBig(i16);
+        font_info.descender = try reader.readIntBig(i16);
+        font_info.line_gap = try reader.readIntBig(i16);
+
+        try reader.skipBytes(16, .{});
+
+        font_info.default_char = try reader.readIntBig(u16);
+        font_info.break_char = try reader.readIntBig(u16);
+    }
 
     {
         std.debug.assert(!data_sections.maxp.isNull());
@@ -603,7 +664,7 @@ const Vertex = packed struct {
     is_active: u8 = 0,
 };
 
-fn findGlyphIndex(font_info: FontInfo, unicode_codepoint: i32) u32 {
+pub fn findGlyphIndex(font_info: FontInfo, unicode_codepoint: i32) u32 {
     const data = font_info.data[0..font_info.data_len];
     const encoding_offset = font_info.cmap_encoding_table_offset;
 
@@ -688,7 +749,7 @@ pub fn getDescent(font: FontInfo) i16 {
     return readBigEndian(i16, @ptrToInt(font.data.ptr) + offset);
 }
 
-fn parseGlyfTableIndexForGlyph(font: FontInfo, glyph_index: i32) !usize {
+fn parseGlyfTableIndexForGlyph(font: FontInfo, glyph_index: u32) !usize {
     if (glyph_index >= font.glyph_count) return error.InvalidGlyphIndex;
 
     const font_data_start_index = @ptrToInt(&font.data[0]);
@@ -721,7 +782,7 @@ fn parseGlyfTableIndexForGlyph(font: FontInfo, glyph_index: i32) !usize {
     return glyph_data_offset;
 }
 
-pub fn calculateGlyphBoundingBox(font: FontInfo, glyph_index: i32) !geometry.BoundingBox(i32) {
+pub fn calculateGlyphBoundingBox(font: FontInfo, glyph_index: u32) !geometry.BoundingBox(i32) {
     const section_index: usize = try parseGlyfTableIndexForGlyph(font, glyph_index);
     const font_data_start_index = @ptrToInt(&font.data[0]);
     const base_index: usize = font_data_start_index + section_index;
@@ -733,13 +794,13 @@ pub fn calculateGlyphBoundingBox(font: FontInfo, glyph_index: i32) !geometry.Bou
     };
 }
 
-pub fn calculateGlyphBoundingBoxScaled(font: FontInfo, glyph_index: i32, scale: f64) !geometry.BoundingBox(i32) {
+pub fn calculateGlyphBoundingBoxScaled(font: FontInfo, glyph_index: u32, scale: f64) !geometry.BoundingBox(f64) {
     const unscaled = try calculateGlyphBoundingBox(font, glyph_index);
-    return geometry.BoundingBox(i32){
-        .x0 = @floatToInt(i32, @floor(@intToFloat(f64, unscaled.x0) * scale)),
-        .y0 = @floatToInt(i32, @floor(@intToFloat(f64, unscaled.y0) * scale)),
-        .x1 = @floatToInt(i32, @ceil(@intToFloat(f64, unscaled.x1) * scale)),
-        .y1 = @floatToInt(i32, @ceil(@intToFloat(f64, unscaled.y1) * scale)),
+    return geometry.BoundingBox(f64){
+        .x0 = @intToFloat(f64, unscaled.x0) * scale,
+        .y0 = @intToFloat(f64, unscaled.y0) * scale,
+        .x1 = @intToFloat(f64, unscaled.x1) * scale,
+        .y1 = @intToFloat(f64, unscaled.y1) * scale,
     };
 }
 
@@ -750,7 +811,7 @@ pub fn rasterizeGlyph(
     scale: f32,
     codepoint: i32,
 ) !Bitmap {
-    const glyph_index: i32 = @intCast(i32, findGlyphIndex(font, codepoint));
+    const glyph_index = findGlyphIndex(font, codepoint);
     const vertices: []Vertex = try loadGlyphVertices(allocator, font, glyph_index);
     defer allocator.free(vertices);
 
@@ -794,7 +855,7 @@ pub fn rasterizeGlyphAlloc(
     scale: f32,
     codepoint: i32,
 ) !Bitmap {
-    const glyph_index: i32 = @intCast(i32, findGlyphIndex(font, codepoint));
+    const glyph_index = findGlyphIndex(font, codepoint);
     const vertices: []Vertex = try loadGlyphVertices(allocator, font, glyph_index);
     defer allocator.free(vertices);
 
@@ -914,17 +975,17 @@ pub fn scaleForPixelHeight(font: FontInfo, desired_height: f32) f32 {
 }
 
 pub fn getRequiredDimensions(font: FontInfo, codepoint: i32, scale: f64) !geometry.Dimensions2D(u32) {
-    const glyph_index = @intCast(i32, findGlyphIndex(font, codepoint));
+    const glyph_index = findGlyphIndex(font, codepoint);
     const bounding_box = try calculateGlyphBoundingBoxScaled(font, glyph_index, scale);
     std.debug.assert(bounding_box.x1 >= bounding_box.x0);
     std.debug.assert(bounding_box.y1 >= bounding_box.y0);
     return geometry.Dimensions2D(u32){
-        .width = @intCast(u32, bounding_box.x1 - bounding_box.x0),
-        .height = @intCast(u32, bounding_box.y1 - bounding_box.y0),
+        .width = @floatToInt(u32, @ceil(bounding_box.x1) - @floor(bounding_box.x0)),
+        .height = @floatToInt(u32, @ceil(bounding_box.y1) - @floor(bounding_box.y0)),
     };
 }
 
-fn loadGlyphVertices(allocator: std.mem.Allocator, font: FontInfo, glyph_index: i32) ![]Vertex {
+fn loadGlyphVertices(allocator: std.mem.Allocator, font: FontInfo, glyph_index: u32) ![]Vertex {
     const data = font.data;
     var vertices: []Vertex = undefined;
     var vertices_count: u32 = 0;

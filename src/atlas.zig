@@ -59,7 +59,7 @@ pub fn Atlas(comptime config: AtlasConfiguration) type {
 
         /// List of vertical offsets needed to render
         /// Index corresponds to same index in character_list
-        vertical_offset_list: []i16,
+        vertical_offset_list: []f32,
         /// Dimensions in texture of each glyph
         dimension_list: []geometry.Dimensions2D(u32),
         kerning_jump_array: []GlyphIndex,
@@ -135,10 +135,10 @@ pub fn Atlas(comptime config: AtlasConfiguration) type {
                 if (self.indexForCodepoint(codepoint)) |glyph_index| {
                     const texture_extent = self.textureExtentForGlyph(glyph_index);
                     const glyph_dimensions = self.dimension_list[glyph_index];
-                    const y_offset = @intToFloat(f32, self.vertical_offset_list[glyph_index]) * scale_factor.vertical;
+                    const y_offset = self.vertical_offset_list[glyph_index] * scale_factor.vertical;
                     const screen_extent = geometry.Extent2D(f32){
                         .x = placement.x + x_increment,
-                        .y = placement.y + y_offset + (line_height * cursor.y),
+                        .y = placement.y - y_offset + (line_height * cursor.y),
                         .width = @intToFloat(f32, glyph_dimensions.width) * scale_factor.horizontal,
                         .height = @intToFloat(f32, glyph_dimensions.height) * scale_factor.vertical,
                     };
@@ -189,7 +189,7 @@ pub fn Atlas(comptime config: AtlasConfiguration) type {
             self.texture_buffer = texture_buffer;
             self.texture_dimensions = texture_dimensions;
 
-            self.vertical_offset_list = try allocator.alloc(i16, codepoint_list.len);
+            self.vertical_offset_list = try allocator.alloc(f32, codepoint_list.len);
             self.dimension_list = try allocator.alloc(geometry.Dimensions2D(u32), codepoint_list.len);
             self.kerning_jump_array = try allocator.alloc(GlyphIndex, codepoint_list.len);
             self.kerning_indices = try allocator.alloc(KerningIndex, codepoint_list.len);
@@ -203,10 +203,10 @@ pub fn Atlas(comptime config: AtlasConfiguration) type {
                 for (self.codepoint_list) |codepoint, codepoint_i| {
                     var dimension = &self.dimension_list[codepoint_i];
                     dimension.* = try otf.getRequiredDimensions(font, codepoint, scale);
-                    const bounding_box = try otf.calculateGlyphBoundingBoxScaled(font, codepoint, scale);
-                    self.vertical_offset_list[codepoint_i] = @intCast(i16, bounding_box.y1);
-                    if (dimension.width > max_width) max_width = dimension.width;
-                    if (dimension.height > max_height) max_height = dimension.height;
+                    const bounding_box = try otf.calculateGlyphBoundingBoxScaled(font, otf.findGlyphIndex(font, codepoint), scale);
+                    self.vertical_offset_list[codepoint_i] = @floatCast(f32, bounding_box.y0);
+                    max_width = @max(max_width, dimension.width);
+                    max_height = @max(max_height, dimension.height);
                 }
                 self.cell_dimensions = .{
                     .width = @intCast(u16, max_width),
