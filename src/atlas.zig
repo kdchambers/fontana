@@ -67,6 +67,7 @@ pub fn Atlas(comptime config: AtlasConfiguration) type {
 
         row_cell_count: u16,
         cell_dimensions: geometry.Dimensions2D(u16),
+        space_advance_scaled: f32,
 
         /// List of charactors contained in the atlas
         codepoint_list: []CodepointType,
@@ -94,12 +95,6 @@ pub fn Atlas(comptime config: AtlasConfiguration) type {
             return bytes_per_character * (character_count + 1);
         }
 
-        // TODO: This will need to be scaled
-        fn verticalOffsetForCodepoint(self: @This(), codepoint: CodepointType) !f32 {
-            const codepoint_index = try indexForCodepoint(codepoint);
-            return self.vertical_offset_list[codepoint_index];
-        }
-
         fn advanceForGlyphPair(self: @This(), codepoint_a: CodepointType, codepoint_b: CodepointType) !f32 {
             const codepoint_index = try indexForCodepoint(codepoint_a);
             const pair_count = self.kerning_jump_array[codepoint_index];
@@ -118,7 +113,6 @@ pub fn Atlas(comptime config: AtlasConfiguration) type {
             placement: geometry.Coordinates2D(f32),
             scale_factor: geometry.Scale2D(f32),
         ) !void {
-            var x_increment: f32 = 0.0;
             var cursor = geometry.Coordinates2D(f32){ .x = 0, .y = 0 };
             for (codepoint_list) |codepoint| {
                 if (codepoint == '\n') {
@@ -131,19 +125,24 @@ pub fn Atlas(comptime config: AtlasConfiguration) type {
                     continue;
                 }
 
+                if (codepoint == ' ') {
+                    cursor.x += self.space_advance_scaled * scale_factor.horizontal;
+                    continue;
+                }
+
                 const line_height: f32 = 0.01;
                 if (self.indexForCodepoint(codepoint)) |glyph_index| {
                     const texture_extent = self.textureExtentForGlyph(glyph_index);
                     const glyph_dimensions = self.dimension_list[glyph_index];
                     const y_offset = self.vertical_offset_list[glyph_index] * scale_factor.vertical;
                     const screen_extent = geometry.Extent2D(f32){
-                        .x = placement.x + x_increment,
+                        .x = placement.x + cursor.x,
                         .y = placement.y - y_offset + (line_height * cursor.y),
                         .width = @intToFloat(f32, glyph_dimensions.width) * scale_factor.horizontal,
                         .height = @intToFloat(f32, glyph_dimensions.height) * scale_factor.vertical,
                     };
                     try writer_interface.write(screen_extent, texture_extent);
-                    x_increment += @intToFloat(f32, glyph_dimensions.width) * scale_factor.horizontal;
+                    cursor.x += @intToFloat(f32, glyph_dimensions.width) * scale_factor.horizontal;
                 }
             }
         }
@@ -197,6 +196,8 @@ pub fn Atlas(comptime config: AtlasConfiguration) type {
             std.mem.copy(CodepointType, self.codepoint_list, codepoint_list);
 
             const scale = otf.scaleForPixelHeight(font, size_pixels);
+            self.space_advance_scaled = font.space_advance * scale;
+
             {
                 var max_width: u32 = 0;
                 var max_height: u32 = 0;

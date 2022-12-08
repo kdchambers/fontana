@@ -367,6 +367,8 @@ pub const FontInfo = extern struct {
     line_gap: i16,
     break_char: u16,
     default_char: u16,
+
+    space_advance: f32,
 };
 
 const Buffer = extern struct {
@@ -379,6 +381,11 @@ const Buffer = extern struct {
 const VMetric = extern struct {
     advance_height: u16,
     topside_bearing: i16,
+};
+
+const HorizontalMetric = extern struct {
+    advance_width: u16,
+    leftside_bearing: i16,
 };
 
 pub fn parseFromBytes(font_data: []u8) !FontInfo {
@@ -506,6 +513,11 @@ pub fn parseFromBytes(font_data: []u8) !FontInfo {
         return error.RequiredSectionHeadMissing;
     }
 
+    if (data_sections.hmtx.isNull()) {
+        std.log.err("Required data section `hmtx` not found", .{});
+        return error.RequiredSectionHeadMissing;
+    }
+
     var font_info = FontInfo{
         .data = font_data.ptr,
         .data_len = @intCast(u32, font_data.len),
@@ -517,6 +529,7 @@ pub fn parseFromBytes(font_data: []u8) !FontInfo {
         .line_gap = undefined,
         .break_char = undefined,
         .default_char = undefined,
+        .space_advance = undefined,
     };
 
     {
@@ -601,7 +614,10 @@ pub fn parseFromBytes(font_data: []u8) !FontInfo {
     font_info.cmap_encoding_table_offset = outer: {
         std.debug.assert(!data_sections.cmap.isNull());
 
-        var fixed_buffer_stream = std.io.FixedBufferStream([]const u8){ .buffer = font_data, .pos = data_sections.cmap.offset };
+        var fixed_buffer_stream = std.io.FixedBufferStream([]const u8){
+            .buffer = font_data,
+            .pos = data_sections.cmap.offset,
+        };
         var reader = fixed_buffer_stream.reader();
 
         const version = try reader.readIntBig(u16);
@@ -629,6 +645,35 @@ pub fn parseFromBytes(font_data: []u8) !FontInfo {
         }
         return error.InvalidPlatform;
     };
+
+    var long_hor_metrics_count: u16 = undefined;
+    {
+        var fixed_buffer_stream = std.io.FixedBufferStream([]const u8){
+            .buffer = font_data,
+            .pos = data_sections.hhea.offset,
+        };
+        var reader = fixed_buffer_stream.reader();
+
+        try reader.skipBytes(17 * @sizeOf(u16), .{});
+        long_hor_metrics_count = try reader.readIntBig(u16);
+        std.debug.assert(long_hor_metrics_count > 0);
+    }
+
+    {
+        var fixed_buffer_stream = std.io.FixedBufferStream([]const u8){
+            .buffer = font_data,
+            .pos = data_sections.hmtx.offset,
+        };
+        var reader = fixed_buffer_stream.reader();
+        const space_glyph_index = findGlyphIndex(font_info, ' ');
+        if (space_glyph_index < long_hor_metrics_count) {
+            try reader.skipBytes(space_glyph_index * @sizeOf(u32), .{});
+            font_info.space_advance = @intToFloat(f32, try reader.readIntBig(u16));
+        } else {
+            try reader.skipBytes((long_hor_metrics_count - 1) * @sizeOf(u32), .{});
+            font_info.space_advance = @intToFloat(f32, try reader.readIntBig(u16));
+        }
+    }
 
     return font_info;
 }
@@ -670,6 +715,7 @@ pub fn findGlyphIndex(font_info: FontInfo, unicode_codepoint: i32) u32 {
 
     if (unicode_codepoint > 0xffff) {
         std.log.info("Invalid codepoint", .{});
+        std.debug.assert(false);
         return 0;
     }
 
@@ -717,6 +763,7 @@ pub fn findGlyphIndex(font_info: FontInfo, unicode_codepoint: i32) u32 {
 
         if (unicode_codepoint < start) {
             // TODO: return error
+            std.debug.assert(false);
             return 0;
         }
 
