@@ -289,6 +289,14 @@ pub const SectionRange = extern struct {
     offset: u32 = 0,
     length: u32 = 0,
 
+    pub inline fn set(self: *@This(), offset: u32, length: u32) void {
+        self.* = .{
+            .offset = offset,
+            .length = length,
+        };
+        std.debug.assert(!self.isNull());
+    }
+
     pub fn isNull(self: @This()) bool {
         return self.offset == 0;
     }
@@ -346,6 +354,9 @@ pub const GlyphFlags = struct {
 };
 
 pub const FontInfo = extern struct {
+    //
+    // Slices cannot be used in extern structs (Required for C compat)
+    //
     data: [*]u8,
     data_len: u32,
     glyph_count: i32 = 0,
@@ -369,13 +380,6 @@ pub const FontInfo = extern struct {
     default_char: u16,
 
     space_advance: f32,
-};
-
-const Buffer = extern struct {
-    ptr: [*]u8 = undefined,
-    len: u32,
-    cursor: u32 = 0,
-    size: u32 = 0,
 };
 
 const VMetric = extern struct {
@@ -419,80 +423,67 @@ pub fn parseFromBytes(font_data: []u8) !FontInfo {
             std.debug.print("{d:2}.    {s}\n", .{ i + 1, tag });
 
             if (std.mem.eql(u8, "cmap", tag)) {
-                data_sections.cmap.offset = offset;
-                data_sections.cmap.length = length;
+                data_sections.cmap.set(offset, length);
                 continue;
             }
 
             if (std.mem.eql(u8, "DSIG", tag)) {
-                data_sections.dsig.offset = offset;
-                data_sections.dsig.length = length;
+                data_sections.dsig.set(offset, length);
                 continue;
             }
 
             if (std.mem.eql(u8, "loca", tag)) {
-                data_sections.loca.offset = offset;
-                data_sections.loca.length = length;
+                data_sections.loca.set(offset, length);
                 continue;
             }
 
             if (std.mem.eql(u8, "head", tag)) {
-                data_sections.head.offset = offset;
-                data_sections.head.length = length;
+                data_sections.head.set(offset, length);
                 continue;
             }
 
             if (std.mem.eql(u8, "glyf", tag)) {
-                data_sections.glyf.offset = offset;
-                data_sections.glyf.length = length;
+                data_sections.glyf.set(offset, length);
                 continue;
             }
 
             if (std.mem.eql(u8, "hhea", tag)) {
-                data_sections.hhea.offset = offset;
-                data_sections.hhea.length = length;
+                data_sections.hhea.set(offset, length);
                 continue;
             }
 
             if (std.mem.eql(u8, "hmtx", tag)) {
-                data_sections.hmtx.offset = offset;
-                data_sections.hmtx.length = length;
+                data_sections.hmtx.set(offset, length);
                 continue;
             }
 
             if (std.mem.eql(u8, "kern", tag)) {
-                data_sections.kern.offset = offset;
-                data_sections.kern.length = length;
+                data_sections.kern.set(offset, length);
                 continue;
             }
 
             if (std.mem.eql(u8, "GPOS", tag)) {
-                data_sections.gpos.offset = offset;
-                data_sections.gpos.length = length;
+                data_sections.gpos.set(offset, length);
                 continue;
             }
 
             if (std.mem.eql(u8, "maxp", tag)) {
-                data_sections.maxp.offset = offset;
-                data_sections.maxp.length = length;
+                data_sections.maxp.set(offset, length);
                 continue;
             }
 
             if (std.mem.eql(u8, "name", tag)) {
-                data_sections.name.offset = offset;
-                data_sections.name.length = length;
+                data_sections.name.set(offset, length);
                 continue;
             }
 
             if (std.mem.eql(u8, "OS/2", tag)) {
-                data_sections.os2.offset = offset;
-                data_sections.os2.length = length;
+                data_sections.os2.set(offset, length);
                 continue;
             }
 
             if (std.mem.eql(u8, "vtmx", tag)) {
-                data_sections.vtmx.offset = offset;
-                data_sections.vtmx.length = length;
+                data_sections.vtmx.set(offset, length);
                 continue;
             }
         }
@@ -540,9 +531,7 @@ pub fn parseFromBytes(font_data: []u8) !FontInfo {
         var reader = fixed_buffer_stream.reader();
 
         const version = try reader.readIntBig(u16);
-        // TODO: Implement other versions
-        std.debug.assert(version == 4);
-
+        _ = version;
         try reader.skipBytes(66, .{});
 
         font_info.ascender = try reader.readIntBig(i16);
