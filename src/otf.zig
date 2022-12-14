@@ -15,6 +15,18 @@ const Outline = rasterizer.Outline;
 const OutlineSegment = rasterizer.OutlineSegment;
 const Point = geometry.Point;
 
+const Adjustment = struct {
+    x_placement: i16,
+    y_placement: i16,
+    x_advance: i16,
+    y_advance: i16,
+};
+
+const KernPair = struct {
+    left_glyph: Adjustment,
+    right_glyph: Adjustment,
+};
+
 pub const Bitmap = extern struct {
     width: u32,
     height: u32,
@@ -392,6 +404,239 @@ const HorizontalMetric = extern struct {
     leftside_bearing: i16,
 };
 
+fn coverageIndexForGlyphID(coverage: []const u8, target_glyph_id: u16) !?u16 {
+    var fixed_buffer_stream = std.io.FixedBufferStream([]const u8){
+        .buffer = coverage,
+        .pos = 0,
+    };
+    var reader = fixed_buffer_stream.reader();
+    const coverage_format = try reader.readIntBig(u16);
+    switch (coverage_format) {
+        1 => {
+            const glyph_count = try reader.readIntBig(u16);
+            var i: usize = 0;
+            while (i < glyph_count) : (i += 1) {
+                const glyph_id = try reader.readIntBig(u16);
+                if (glyph_id == target_glyph_id) return @intCast(u16, i);
+            }
+        },
+        2 => {
+            const range_count = try reader.readIntBig(u16);
+            var i: usize = 0;
+            while (i < range_count) : (i += 1) {
+                const glyph_start = try reader.readIntBig(u16);
+                const glyph_end = try reader.readIntBig(u16);
+                const base_coverage_index = try reader.readIntBig(u16);
+                if (target_glyph_id >= glyph_start and target_glyph_id <= glyph_end) {
+                    return @intCast(u16, base_coverage_index + (i - glyph_start));
+                }
+            }
+        },
+        else => return null,
+    }
+    return null;
+}
+
+// https://learn.microsoft.com/en-us/typography/opentype/spec/gpos
+const GPosLookupType = enum(u16) {
+    single_adjustment = 1,
+    pair_adjustment = 2,
+    cursive_adjustment = 3,
+    mark_to_base = 4,
+    mark_to_ligature = 5,
+    mark_to_mark = 6,
+    context = 7,
+    chained_context = 8,
+    extension = 9,
+    _,
+};
+
+const ValueRecord = extern struct {
+    x_placement: i16,
+    y_placement: i16,
+    x_advance: i16,
+    y_advance: i16,
+    x_placement_device_offset: u16,
+    y_placement_device_offset: u16,
+    x_advance_device_offset: u16,
+    y_advance_device_offset: u16,
+
+    pub fn read(reader: anytype) !ValueRecord {
+        var value_record: ValueRecord = undefined;
+        value_record.x_placement = try reader.readIntBig(i16);
+        value_record.y_placement = try reader.readIntBig(i16);
+        value_record.x_advance = try reader.readIntBig(i16);
+        value_record.y_advance = try reader.readIntBig(i16);
+        value_record.x_placement_device_offset = try reader.readIntBig(u16);
+        value_record.y_placement_device_offset = try reader.readIntBig(u16);
+        value_record.x_advance_device_offset = try reader.readIntBig(u16);
+        value_record.y_advance_device_offset = try reader.readIntBig(u16);
+        return value_record;
+    }
+};
+
+pub fn generateKernPairsFromGpos(allocator: std.mem.Allocator, font: FontInfo, codepoints: []const u8) ![]KernPair {
+    var fixed_buffer_stream = std.io.FixedBufferStream([]const u8){
+        .buffer = font.data[0..font.data_len],
+        .pos = font.gpos.offset,
+    };
+    var reader = fixed_buffer_stream.reader();
+
+    std.debug.assert(!font.gpos.isNull());
+
+    const version_major = try reader.readIntBig(i16);
+    const version_minor = try reader.readIntBig(i16);
+    const script_list_offset = (try reader.readIntBig(u16)) + font.gpos.offset;
+    const feature_list_offset = try reader.readIntBig(u16);
+    const lookup_list_offset = try reader.readIntBig(u16);
+
+    _ = feature_list_offset;
+
+    std.debug.assert(version_major == 1 and (version_minor == 0 or version_minor == 1));
+
+    if (version_minor == 1) {
+        _ = try reader.readIntBig(u32); // feature variation offset
+    }
+
+    try fixed_buffer_stream.seekTo(script_list_offset);
+    const script_count = try reader.readIntBig(u16);
+    var previous_offset: usize = undefined;
+    var selected_lang_offset: u16 = 0;
+
+    var i: usize = 0;
+    while (i < script_count) : (i += 1) {
+        var tag: [4]u8 = undefined;
+        _ = try reader.read(&tag);
+        const offset = try reader.readIntBig(u16);
+        previous_offset = try fixed_buffer_stream.getPos();
+        try fixed_buffer_stream.seekTo(script_list_offset + offset);
+
+        const default_lang_offset = try reader.readIntBig(u16);
+        var lang_count = try reader.readIntBig(u16);
+        _ = lang_count;
+        if (std.mem.eql(u8, "DFLT", &tag)) {
+            selected_lang_offset = default_lang_offset + offset;
+            break;
+        }
+        try fixed_buffer_stream.seekTo(previous_offset);
+    }
+
+    if (selected_lang_offset == 0) {
+        return error.NoDefaultLang;
+    }
+
+    try fixed_buffer_stream.seekTo(script_list_offset + selected_lang_offset);
+    const lookup_order_offset = try reader.readIntBig(u16);
+    const required_feature_index = try reader.readIntBig(u16);
+    const feature_index_count = try reader.readIntBig(u16);
+
+    _ = required_feature_index;
+    _ = feature_index_count;
+    _ = lookup_order_offset;
+
+    //
+    // Jump to Lookup List Table
+    // https://learn.microsoft.com/en-us/typography/opentype/spec/chapter2#lookup-list-table
+    //
+    try fixed_buffer_stream.seekTo(font.gpos.offset + lookup_list_offset);
+    const lookup_entry_count = try reader.readIntBig(u16);
+
+    i = 0;
+    var lookup_table_offset: u32 = 0;
+    const subtable_count: u16 = blk: {
+        while (i < lookup_entry_count) : (i += 1) {
+            const lookup_offset = try reader.readIntBig(u16);
+            lookup_table_offset = font.gpos.offset + lookup_list_offset + lookup_offset;
+            const saved_offset = try fixed_buffer_stream.getPos();
+            //
+            // Jump to Lookup Table
+            // https://learn.microsoft.com/en-us/typography/opentype/spec/chapter2#lookup-table
+            //
+            try fixed_buffer_stream.seekTo(lookup_table_offset);
+            const lookup_type = try reader.readEnum(GPosLookupType, .Big);
+            _ = try reader.readIntBig(u16); // lookup_flag
+            const count = try reader.readIntBig(u16);
+            if (lookup_type == .pair_adjustment) {
+                break :blk count;
+            }
+            try fixed_buffer_stream.seekTo(saved_offset);
+        }
+        return error.NoPairAdjustmentLookup;
+    };
+    var kern_pairs = try allocator.alloc(KernPair, std.math.pow(usize, codepoints.len, 2));
+    for (codepoints) |left_codepoint, left_codepoint_i| {
+        const left_glyph_index = findGlyphIndex(font, left_codepoint);
+        i = 0;
+        const coverage_index = blk: {
+            while (i < subtable_count) : (i += 1) {
+                const subtable_offset = try reader.readIntBig(u16);
+                const subtable_offset_absolute = lookup_table_offset + subtable_offset;
+                const saved_lookup_offset = try fixed_buffer_stream.getPos();
+                try fixed_buffer_stream.seekTo(subtable_offset_absolute);
+                const pos_format = try reader.readIntBig(u16);
+                switch (pos_format) {
+                    1 => {
+                        const coverage_offset = try reader.readIntBig(u16);
+                        const coverage_offset_absolute = coverage_offset + subtable_offset_absolute;
+                        if (try coverageIndexForGlyphID(font.data[coverage_offset_absolute..font.data_len], @intCast(u16, left_glyph_index))) |coverage_index| {
+                            break :blk coverage_index;
+                        }
+                    },
+                    2 => {
+                        // TODO:
+                        std.log.warn("posFormat 2 not implemented for lookup type `pair_adjustment`", .{});
+                    },
+                    else => return error.InvalidPairAdjustmentSubtableFormat,
+                }
+                try fixed_buffer_stream.seekTo(saved_lookup_offset);
+            }
+            return error.NoCoverageIndex;
+        };
+        const value_format_1 = try reader.readIntBig(u16);
+        const value_format_2 = try reader.readIntBig(u16);
+        const pair_set_count = try reader.readIntBig(u16);
+
+        // TODO
+        if (!(value_format_1 == 4 and value_format_2 == 0)) return error.InvalidValueFormat;
+
+        _ = pair_set_count;
+
+        const entry_size = 2 + 32;
+        try reader.skipBytes(coverage_index * entry_size, .{});
+        const pair_value_count = try reader.readIntBig(u16);
+        const saved_pairlist_offset = try fixed_buffer_stream.getPos();
+        for (codepoints) |right_codepoint, right_codepoint_i| {
+            const right_glyph_index = findGlyphIndex(font, right_codepoint);
+            i = 0;
+            while (i < pair_value_count) : (i += 1) {
+                const right_glyph_id = try reader.readIntBig(u16);
+                const record_1 = try ValueRecord.read(reader);
+                const record_2 = try ValueRecord.read(reader);
+                if (right_glyph_id == right_glyph_index) {
+                    kern_pairs[(left_codepoint_i * codepoints.len) + right_codepoint_i] = .{
+                        .left_glyph = .{
+                            .x_placement = record_1.x_placement,
+                            .y_placement = record_1.y_placement,
+                            .x_advance = record_1.x_advance,
+                            .y_advance = record_1.y_advance,
+                        },
+                        .right_glyph = .{
+                            .x_placement = record_2.x_placement,
+                            .y_placement = record_2.y_placement,
+                            .x_advance = record_2.x_advance,
+                            .y_advance = record_2.y_advance,
+                        },
+                    };
+                    try fixed_buffer_stream.seekTo(saved_pairlist_offset);
+                    break;
+                }
+            }
+            return error.MatchGlyphPairFailed;
+        }
+    }
+    return kern_pairs;
+}
+
 pub fn parseFromBytes(font_data: []u8) !FontInfo {
     var data_sections = DataSections{};
     {
@@ -515,6 +760,7 @@ pub fn parseFromBytes(font_data: []u8) !FontInfo {
         .hhea = data_sections.hhea,
         .loca = data_sections.loca,
         .glyf = data_sections.glyf,
+        .gpos = data_sections.gpos,
         .ascender = undefined,
         .descender = undefined,
         .line_gap = undefined,
