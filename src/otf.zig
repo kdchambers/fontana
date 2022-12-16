@@ -478,6 +478,45 @@ const ValueRecord = extern struct {
     }
 };
 
+fn getClassForGlyph(class_table_data: []const u8, glyph_index: u32) !u16 {
+    var fixed_buffer_stream = std.io.FixedBufferStream([]const u8){
+        .buffer = class_table_data,
+        .pos = 0,
+    };
+    var reader = fixed_buffer_stream.reader();
+
+    const pos_format = try reader.readIntBig(u16);
+    std.debug.assert(pos_format == 1 or pos_format == 2);
+    switch (pos_format) {
+        1 => {
+            const start_glyph_id = try reader.readIntBig(u16);
+            const glyph_count = try reader.readIntBig(u16);
+            try reader.skipBytes(start_glyph_id * @sizeOf(u16), .{});
+            var x: usize = 0;
+            while (x < glyph_count) : (x += 1) {
+                const current_glyph_index = try reader.readIntBig(u16);
+                if (current_glyph_index == glyph_index) {
+                    return @intCast(u16, x);
+                }
+            }
+        },
+        2 => {
+            const class_range_count = try reader.readIntBig(u16);
+            var x: usize = 0;
+            while (x < class_range_count) : (x += 1) {
+                const start_glyph_id = try reader.readIntBig(u16);
+                const end_glyph_id = try reader.readIntBig(u16);
+                const class = try reader.readIntBig(u16);
+                if (glyph_index >= start_glyph_id and glyph_index <= end_glyph_id) {
+                    return class;
+                }
+            }
+        },
+        else => unreachable,
+    }
+    return 0;
+}
+
 pub fn generateKernPairsFromGpos(allocator: std.mem.Allocator, font: FontInfo, codepoints: []const u8) ![]i16 {
     var fixed_buffer_stream = std.io.FixedBufferStream([]const u8){
         .buffer = font.data[0..font.data_len],
@@ -570,68 +609,89 @@ pub fn generateKernPairsFromGpos(allocator: std.mem.Allocator, font: FontInfo, c
     const subtable_start_offset = try fixed_buffer_stream.getPos();
 
     var kern_pairs = try allocator.alloc(i16, std.math.pow(usize, codepoints.len, 2));
+    errdefer allocator.free(kern_pairs);
+
     for (codepoints) |left_codepoint, left_codepoint_i| {
+        try fixed_buffer_stream.seekTo(subtable_start_offset);
         const left_glyph_index = findGlyphIndex(font, left_codepoint);
         i = 0;
-        const coverage_index = blk: {
-            while (i < subtable_count) : (i += 1) {
-                const subtable_offset = try reader.readIntBig(u16);
-                subtable_offset_absolute = lookup_table_offset + subtable_offset;
-                const saved_lookup_offset = try fixed_buffer_stream.getPos();
-                try fixed_buffer_stream.seekTo(subtable_offset_absolute);
-                const pos_format = try reader.readIntBig(u16);
-                switch (pos_format) {
-                    1 => {
-                        const coverage_offset = try reader.readIntBig(u16);
-                        const coverage_offset_absolute = coverage_offset + subtable_offset_absolute;
-                        const coverage_slice = font.data[coverage_offset_absolute..font.data_len];
-                        if (try coverageIndexForGlyphID(coverage_slice, @intCast(u16, left_glyph_index))) |coverage_index| {
-                            break :blk coverage_index;
+        subtable_loop: while (i < subtable_count) : (i += 1) {
+            const subtable_offset = try reader.readIntBig(u16);
+            subtable_offset_absolute = lookup_table_offset + subtable_offset;
+            const saved_lookup_offset = try fixed_buffer_stream.getPos();
+            try fixed_buffer_stream.seekTo(subtable_offset_absolute);
+            const pos_format = try reader.readIntBig(u16);
+            const coverage_offset = try reader.readIntBig(u16);
+            const coverage_offset_absolute = coverage_offset + subtable_offset_absolute;
+            const coverage_slice = font.data[coverage_offset_absolute..font.data_len];
+            switch (pos_format) {
+                1 => {
+                    if (try coverageIndexForGlyphID(coverage_slice, @intCast(u16, left_glyph_index))) |coverage_index| {
+                        const value_format_1 = try reader.readIntBig(u16);
+                        const value_format_2 = try reader.readIntBig(u16);
+                        const pair_set_count = try reader.readIntBig(u16);
+
+                        // TODO
+                        if (!(value_format_1 == 4 and value_format_2 == 0)) return error.InvalidValueFormat;
+
+                        // Jump to pairSetOffset[coverage_index]
+                        try reader.skipBytes(coverage_index * @sizeOf(u16), .{});
+
+                        const pair_set_offset = try reader.readIntBig(u16);
+                        try fixed_buffer_stream.seekTo(subtable_offset_absolute + pair_set_offset);
+
+                        const pair_value_count = try reader.readIntBig(u16);
+                        const saved_pairlist_offset = try fixed_buffer_stream.getPos();
+
+                        second_glyph_loop: for (codepoints) |right_codepoint, right_codepoint_i| {
+                            kern_pairs[(left_codepoint_i * codepoints.len) + right_codepoint_i] = 0;
+                            const right_glyph_index = findGlyphIndex(font, right_codepoint);
+                            i = 0;
+                            while (i < pair_value_count) : (i += 1) {
+                                const right_glyph_id = try reader.readIntBig(u16);
+                                const advance_x = try reader.readIntBig(i16);
+                                if (right_glyph_id == right_glyph_index) {
+                                    kern_pairs[(left_codepoint_i * codepoints.len) + right_codepoint_i] = advance_x;
+                                    try fixed_buffer_stream.seekTo(saved_pairlist_offset);
+                                    continue :second_glyph_loop;
+                                }
+                            }
+                            try fixed_buffer_stream.seekTo(saved_pairlist_offset);
                         }
-                    },
-                    2 => {
-                        // TODO:
-                        std.log.warn("posFormat 2 not implemented for lookup type `pair_adjustment`", .{});
-                        std.debug.assert(false);
-                    },
-                    else => return error.InvalidPairAdjustmentSubtableFormat,
-                }
-                try fixed_buffer_stream.seekTo(saved_lookup_offset);
+                        break :subtable_loop;
+                    }
+                },
+                2 => {
+                    // TODO:
+                    std.log.warn("posFormat 2 not implemented for lookup type `pair_adjustment`", .{});
+                    std.debug.assert(false);
+                    const value_format_1 = try reader.readIntBig(u16);
+                    const value_format_2 = try reader.readIntBig(u16);
+
+                    std.debug.assert(value_format_1 == 4);
+                    std.debug.assert(value_format_2 == 0);
+
+                    const classdef_offset_1 = try reader.readIntBig(u16);
+                    const classdef_offset_2 = try reader.readIntBig(u16);
+                    const class_count_1 = try reader.readIntBig(u16);
+                    _ = class_count_1;
+                    const class_count_2 = try reader.readIntBig(u16);
+                    const class_index_1 = try getClassForGlyph(font.data[subtable_offset_absolute + classdef_offset_1 .. font.data_len], left_glyph_index);
+                    const saved_offset = try fixed_buffer_stream.getPos();
+                    for (codepoints) |right_codepoint, right_codepoint_i| {
+                        const right_glyph_index = findGlyphIndex(font, right_codepoint);
+                        const class_index_2 = try getClassForGlyph(font.data[subtable_offset_absolute + classdef_offset_2 .. font.data_len], right_glyph_index);
+                        try reader.skipBytes((class_index_2 + (class_index_1 * class_count_2)) * @sizeOf(u16), .{});
+                        const x_advance = try reader.readIntBig(i16);
+                        kern_pairs[(left_codepoint_i * codepoints.len) + right_codepoint_i] = x_advance;
+                        try fixed_buffer_stream.seekTo(saved_offset);
+                    }
+                    break :subtable_loop;
+                },
+                else => return error.InvalidPairAdjustmentSubtableFormat,
             }
-            return error.NoCoverageIndex;
-        };
-        const value_format_1 = try reader.readIntBig(u16);
-        const value_format_2 = try reader.readIntBig(u16);
-        const pair_set_count = try reader.readIntBig(u16);
-        _ = pair_set_count;
-
-        // TODO
-        if (!(value_format_1 == 4 and value_format_2 == 0)) return error.InvalidValueFormat;
-
-        // Jump to pairSetOffset[coverage_index]
-        try reader.skipBytes(coverage_index * @sizeOf(u16), .{});
-
-        const pair_set_offset = try reader.readIntBig(u16);
-        try fixed_buffer_stream.seekTo(subtable_offset_absolute + pair_set_offset);
-
-        const pair_value_count = try reader.readIntBig(u16);
-        const saved_pairlist_offset = try fixed_buffer_stream.getPos();
-        second_glyph_loop: for (codepoints) |right_codepoint, right_codepoint_i| {
-            const right_glyph_index = findGlyphIndex(font, right_codepoint);
-            i = 0;
-            while (i < pair_value_count) : (i += 1) {
-                const right_glyph_id = try reader.readIntBig(u16);
-                const advance_x = try reader.readIntBig(i16);
-                if (right_glyph_id == right_glyph_index) {
-                    kern_pairs[(left_codepoint_i * codepoints.len) + right_codepoint_i] = advance_x;
-                    try fixed_buffer_stream.seekTo(saved_pairlist_offset);
-                    continue :second_glyph_loop;
-                }
-            }
-            kern_pairs[(left_codepoint_i * codepoints.len) + right_codepoint_i] = 0;
-            try fixed_buffer_stream.seekTo(saved_pairlist_offset);
+            try fixed_buffer_stream.seekTo(saved_lookup_offset);
         }
-        try fixed_buffer_stream.seekTo(subtable_start_offset);
     }
     return kern_pairs;
 }
