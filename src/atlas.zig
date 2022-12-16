@@ -175,7 +175,6 @@ pub fn Atlas(comptime config: AtlasConfiguration) type {
         /// Rasterizes glyphs for all characters in char_list into texture_buffer
         /// Creates and returns an Atlas which stores meta data and exposes an interface for
         /// calculating draw positions for glyphs using kerning, etc
-        /// NOTE: codepoint_list referenced but not owned
         pub fn init(
             self: *@This(),
             allocator: std.mem.Allocator,
@@ -189,10 +188,20 @@ pub fn Atlas(comptime config: AtlasConfiguration) type {
             self.texture_dimensions = texture_dimensions;
 
             self.vertical_offset_list = try allocator.alloc(f32, codepoint_list.len);
+            errdefer allocator.free(self.vertical_offset_list);
+
             self.dimension_list = try allocator.alloc(geometry.Dimensions2D(u32), codepoint_list.len);
+            errdefer allocator.free(self.dimension_list);
+
             self.kerning_jump_array = try allocator.alloc(GlyphIndex, codepoint_list.len);
+            errdefer allocator.free(self.kerning_jump_array);
+
             self.kerning_indices = try allocator.alloc(KerningIndex, codepoint_list.len);
+            errdefer allocator.free(self.kerning_indices);
+
             self.codepoint_list = try allocator.alloc(CodepointType, codepoint_list.len);
+            errdefer allocator.free(self.codepoint_list);
+
             std.mem.copy(CodepointType, self.codepoint_list, codepoint_list);
 
             const scale = otf.scaleForPixelHeight(font, size_pixels);
