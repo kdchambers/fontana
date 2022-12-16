@@ -22,9 +22,10 @@ const Adjustment = struct {
     y_advance: i16,
 };
 
-const KernPair = struct {
-    left_glyph: Adjustment,
-    right_glyph: Adjustment,
+pub const KernPair = struct {
+    left_codepoint: u8,
+    right_codepoint: u8,
+    advance_x: i16,
 };
 
 pub const Bitmap = extern struct {
@@ -517,7 +518,7 @@ fn getClassForGlyph(class_table_data: []const u8, glyph_index: u32) !u16 {
     return 0;
 }
 
-pub fn generateKernPairsFromGpos(allocator: std.mem.Allocator, font: FontInfo, codepoints: []const u8) ![]i16 {
+pub fn generateKernPairsFromGpos(allocator: std.mem.Allocator, font: FontInfo, codepoints: []const u8) ![]KernPair {
     var fixed_buffer_stream = std.io.FixedBufferStream([]const u8){
         .buffer = font.data[0..font.data_len],
         .pos = font.gpos.offset,
@@ -608,10 +609,14 @@ pub fn generateKernPairsFromGpos(allocator: std.mem.Allocator, font: FontInfo, c
     var subtable_offset_absolute: u32 = 0;
     const subtable_start_offset = try fixed_buffer_stream.getPos();
 
-    var kern_pairs = try allocator.alloc(i16, std.math.pow(usize, codepoints.len, 2));
+    //
+    // Allocate maximum possible value + shrink later
+    //
+    var kern_pairs = try allocator.alloc(KernPair, std.math.pow(usize, codepoints.len, 2));
     errdefer allocator.free(kern_pairs);
 
-    for (codepoints) |left_codepoint, left_codepoint_i| {
+    var kern_count: usize = 0;
+    for (codepoints) |left_codepoint| {
         try fixed_buffer_stream.seekTo(subtable_start_offset);
         const left_glyph_index = findGlyphIndex(font, left_codepoint);
         i = 0;
@@ -630,8 +635,9 @@ pub fn generateKernPairsFromGpos(allocator: std.mem.Allocator, font: FontInfo, c
                         const value_format_1 = try reader.readIntBig(u16);
                         const value_format_2 = try reader.readIntBig(u16);
                         const pair_set_count = try reader.readIntBig(u16);
+                        _ = pair_set_count;
 
-                        // TODO
+                        // TODO: Support more format types
                         if (!(value_format_1 == 4 and value_format_2 == 0)) return error.InvalidValueFormat;
 
                         // Jump to pairSetOffset[coverage_index]
@@ -643,15 +649,19 @@ pub fn generateKernPairsFromGpos(allocator: std.mem.Allocator, font: FontInfo, c
                         const pair_value_count = try reader.readIntBig(u16);
                         const saved_pairlist_offset = try fixed_buffer_stream.getPos();
 
-                        second_glyph_loop: for (codepoints) |right_codepoint, right_codepoint_i| {
-                            kern_pairs[(left_codepoint_i * codepoints.len) + right_codepoint_i] = 0;
+                        second_glyph_loop: for (codepoints) |right_codepoint| {
                             const right_glyph_index = findGlyphIndex(font, right_codepoint);
                             i = 0;
                             while (i < pair_value_count) : (i += 1) {
                                 const right_glyph_id = try reader.readIntBig(u16);
                                 const advance_x = try reader.readIntBig(i16);
                                 if (right_glyph_id == right_glyph_index) {
-                                    kern_pairs[(left_codepoint_i * codepoints.len) + right_codepoint_i] = advance_x;
+                                    kern_pairs[kern_count] = .{
+                                        .left_codepoint = left_codepoint,
+                                        .right_codepoint = right_codepoint,
+                                        .advance_x = advance_x,
+                                    };
+                                    kern_count += 1;
                                     try fixed_buffer_stream.seekTo(saved_pairlist_offset);
                                     continue :second_glyph_loop;
                                 }
@@ -662,15 +672,11 @@ pub fn generateKernPairsFromGpos(allocator: std.mem.Allocator, font: FontInfo, c
                     }
                 },
                 2 => {
-                    // TODO:
-                    std.log.warn("posFormat 2 not implemented for lookup type `pair_adjustment`", .{});
-                    std.debug.assert(false);
                     const value_format_1 = try reader.readIntBig(u16);
                     const value_format_2 = try reader.readIntBig(u16);
-
+                    // TODO: Support more format types
                     std.debug.assert(value_format_1 == 4);
                     std.debug.assert(value_format_2 == 0);
-
                     const classdef_offset_1 = try reader.readIntBig(u16);
                     const classdef_offset_2 = try reader.readIntBig(u16);
                     const class_count_1 = try reader.readIntBig(u16);
@@ -678,12 +684,19 @@ pub fn generateKernPairsFromGpos(allocator: std.mem.Allocator, font: FontInfo, c
                     const class_count_2 = try reader.readIntBig(u16);
                     const class_index_1 = try getClassForGlyph(font.data[subtable_offset_absolute + classdef_offset_1 .. font.data_len], left_glyph_index);
                     const saved_offset = try fixed_buffer_stream.getPos();
-                    for (codepoints) |right_codepoint, right_codepoint_i| {
+                    for (codepoints) |right_codepoint| {
                         const right_glyph_index = findGlyphIndex(font, right_codepoint);
                         const class_index_2 = try getClassForGlyph(font.data[subtable_offset_absolute + classdef_offset_2 .. font.data_len], right_glyph_index);
                         try reader.skipBytes((class_index_2 + (class_index_1 * class_count_2)) * @sizeOf(u16), .{});
-                        const x_advance = try reader.readIntBig(i16);
-                        kern_pairs[(left_codepoint_i * codepoints.len) + right_codepoint_i] = x_advance;
+                        const advance_x = try reader.readIntBig(i16);
+                        if (advance_x != 0) {
+                            kern_pairs[kern_count] = .{
+                                .left_codepoint = left_codepoint,
+                                .right_codepoint = right_codepoint,
+                                .advance_x = advance_x,
+                            };
+                            kern_count += 1;
+                        }
                         try fixed_buffer_stream.seekTo(saved_offset);
                     }
                     break :subtable_loop;
@@ -693,7 +706,12 @@ pub fn generateKernPairsFromGpos(allocator: std.mem.Allocator, font: FontInfo, c
             try fixed_buffer_stream.seekTo(saved_lookup_offset);
         }
     }
-    return kern_pairs;
+
+    if(!allocator.resize(kern_pairs, kern_count)) {
+        std.log.warn("Failed to shrink KernPair array", .{});
+    }
+
+    return kern_pairs[0..kern_count];
 }
 
 pub fn parseFromBytes(font_data: []u8) !FontInfo {
