@@ -48,11 +48,6 @@ pub fn Atlas(comptime config: AtlasConfiguration) type {
         };
     };
 
-    const KerningIndex = packed struct {
-        next_glyph_index: GlyphIndex,
-        advance: f32,
-    };
-
     return struct {
         texture_buffer: [*]PixelType,
         texture_dimensions: geometry.Dimensions2D(u16),
@@ -69,6 +64,8 @@ pub fn Atlas(comptime config: AtlasConfiguration) type {
         cell_dimensions: geometry.Dimensions2D(u16),
         space_advance_scaled: f32,
 
+        font: *otf.FontInfo,
+
         /// List of charactors contained in the atlas
         codepoint_list: []CodepointType,
 
@@ -79,20 +76,6 @@ pub fn Atlas(comptime config: AtlasConfiguration) type {
                 }
             }
             return null;
-        }
-
-        /// Memory required for Atlas itself (Not Texure)
-        pub fn requiredMemory(character_count: u32) u32 {
-            // NOTE: bp = bytes_per
-            const bp_vertical_offset = @sizeOf(i16);
-            const bp_dimension = @sizeOf(u32);
-            const bp_kerning_jump = @sizeOf(GlyphIndex);
-            const bp_kerning_index = @sizeOf(KerningIndex);
-            const bp_codepoint = @sizeOf(CodepointType);
-
-            const bytes_per_character = bp_vertical_offset + bp_dimension + bp_kerning_jump + bp_kerning_index + bp_codepoint;
-            // +1 to cover padding required for alignment
-            return bytes_per_character * (character_count + 1);
         }
 
         fn advanceForGlyphPair(self: @This(), codepoint_a: CodepointType, codepoint_b: CodepointType) !f32 {
@@ -114,7 +97,9 @@ pub fn Atlas(comptime config: AtlasConfiguration) type {
             scale_factor: geometry.Scale2D(f32),
         ) !void {
             var cursor = geometry.Coordinates2D(f32){ .x = 0, .y = 0 };
-            for (codepoint_list) |codepoint| {
+            var i: usize = 0;
+            outer: while (i < codepoint_list.len) : (i += 1) {
+                const codepoint = codepoint_list[i];
                 if (codepoint == '\n') {
                     cursor.y += 1;
                     cursor.x = 0;
@@ -142,6 +127,27 @@ pub fn Atlas(comptime config: AtlasConfiguration) type {
                         .height = @intToFloat(f32, glyph_dimensions.height) * scale_factor.vertical,
                     };
                     try writer_interface.write(screen_extent, texture_extent);
+                    //
+                    // Apply kerning
+                    //
+                    if (i != codepoint_list.len - 1) {
+                        const right_codepoint = codepoint_list[i + 1];
+                        for (self.kerning_pairs) |kern_pair| {
+                            const left = kern_pair.left_codepoint;
+                            const right = kern_pair.right_codepoint;
+                            if (left == codepoint and right == right_codepoint) {
+                                const kern_advance = @intToFloat(f32, kern_pair.advance_x);
+                                std.log.info("applying kern '{c}' -> '{c}' : {d} {d}", .{
+                                    codepoint,
+                                    right_codepoint,
+                                    kern_advance,
+                                    kern_advance * self.font.scale,
+                                });
+                                cursor.x += kern_advance * self.font.scale * scale_factor.horizontal;
+                                continue :outer;
+                            }
+                        }
+                    }
                     const base_advance = self.advances[glyph_index];
                     cursor.x += base_advance * scale_factor.horizontal;
                 }
@@ -179,12 +185,14 @@ pub fn Atlas(comptime config: AtlasConfiguration) type {
         pub fn init(
             self: *@This(),
             allocator: std.mem.Allocator,
-            font: otf.FontInfo,
+            font_ptr: *otf.FontInfo,
             codepoint_list: []const CodepointType,
             size_pixels: f32,
             texture_buffer: [*]PixelType,
             texture_dimensions: geometry.Dimensions2D(u16),
         ) !void {
+            const font = font_ptr.*;
+
             self.texture_buffer = texture_buffer;
             self.texture_dimensions = texture_dimensions;
 
@@ -204,6 +212,10 @@ pub fn Atlas(comptime config: AtlasConfiguration) type {
 
             const scale = otf.scaleForPixelHeight(font, size_pixels);
             self.space_advance_scaled = font.space_advance * scale;
+
+            font_ptr.scale = scale;
+
+            self.font = font_ptr;
 
             self.advances = try otf.loadXAdvances(allocator, font, codepoint_list, scale);
             errdefer allocator.free(self.advances);
