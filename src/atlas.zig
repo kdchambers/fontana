@@ -62,8 +62,7 @@ pub fn Atlas(comptime config: AtlasConfiguration) type {
         vertical_offset_list: []f32,
         /// Dimensions in texture of each glyph
         dimension_list: []geometry.Dimensions2D(u32),
-        kerning_jump_array: []GlyphIndex,
-        kerning_indices: []KerningIndex,
+        kerning_pairs: []otf.KernPair,
 
         row_cell_count: u16,
         cell_dimensions: geometry.Dimensions2D(u16),
@@ -193,16 +192,13 @@ pub fn Atlas(comptime config: AtlasConfiguration) type {
             self.dimension_list = try allocator.alloc(geometry.Dimensions2D(u32), codepoint_list.len);
             errdefer allocator.free(self.dimension_list);
 
-            self.kerning_jump_array = try allocator.alloc(GlyphIndex, codepoint_list.len);
-            errdefer allocator.free(self.kerning_jump_array);
-
-            self.kerning_indices = try allocator.alloc(KerningIndex, codepoint_list.len);
-            errdefer allocator.free(self.kerning_indices);
-
             self.codepoint_list = try allocator.alloc(CodepointType, codepoint_list.len);
             errdefer allocator.free(self.codepoint_list);
 
             std.mem.copy(CodepointType, self.codepoint_list, codepoint_list);
+
+            self.kerning_pairs = try otf.generateKernPairsFromGpos(allocator, font, codepoint_list);
+            errdefer allocator.free(self.kerning_pairs);
 
             const scale = otf.scaleForPixelHeight(font, size_pixels);
             self.space_advance_scaled = font.space_advance * scale;
@@ -239,16 +235,12 @@ pub fn Atlas(comptime config: AtlasConfiguration) type {
                 pixel_writer.write_extent.y = self.cell_dimensions.height * @intCast(u32, @divFloor(codepoint_i, self.row_cell_count));
                 _ = try otf.rasterizeGlyph(allocator, pixel_writer, font, scale, codepoint);
             }
-            //
-            // TODO: Kearning
-            //
         }
 
         pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
             allocator.free(self.vertical_offset_list);
             allocator.free(self.dimension_list);
-            allocator.free(self.kerning_jump_array);
-            allocator.free(self.kerning_indices);
+            allocator.free(self.kerning_pairs);
             allocator.free(self.codepoint_list);
         }
     };
