@@ -387,6 +387,7 @@ pub const FontInfo = extern struct {
     cmap_encoding_table_offset: u32 = 0,
     horizonal_metrics_count: u32 = 0,
 
+    scale: f32 = 1.0,
     ascender: i16,
     descender: i16,
     line_gap: i16,
@@ -394,6 +395,10 @@ pub const FontInfo = extern struct {
     default_char: u16,
 
     space_advance: f32,
+
+    pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
+        allocator.free(self.data[0..self.data_len]);
+    }
 };
 
 const VMetric = extern struct {
@@ -726,6 +731,18 @@ pub fn generateKernPairsFromGpos(allocator: std.mem.Allocator, font: FontInfo, c
     }
 
     return kern_pairs[0..kern_count];
+}
+
+pub fn loadFromFile(allocator: std.mem.Allocator, file_path: []const u8) !FontInfo {
+    const file_handle = try std.fs.cwd().openFile(file_path, .{ .mode = .read_only });
+    defer file_handle.close();
+
+    const file_size = (try file_handle.stat()).size;
+
+    var font_buffer = try allocator.alloc(u8, file_size);
+    _ = try file_handle.readAll(font_buffer);
+
+    return try parseFromBytes(font_buffer);
 }
 
 pub fn parseFromBytes(font_data: []u8) !FontInfo {
