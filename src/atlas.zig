@@ -63,6 +63,7 @@ pub fn Atlas(comptime config: AtlasConfiguration) type {
         /// Dimensions in texture of each glyph
         dimension_list: []geometry.Dimensions2D(u32),
         kerning_pairs: []otf.KernPair,
+        advances: []f32,
 
         row_cell_count: u16,
         cell_dimensions: geometry.Dimensions2D(u16),
@@ -141,7 +142,8 @@ pub fn Atlas(comptime config: AtlasConfiguration) type {
                         .height = @intToFloat(f32, glyph_dimensions.height) * scale_factor.vertical,
                     };
                     try writer_interface.write(screen_extent, texture_extent);
-                    cursor.x += @intToFloat(f32, glyph_dimensions.width) * scale_factor.horizontal;
+                    const base_advance = self.advances[glyph_index];
+                    cursor.x += base_advance * scale_factor.horizontal;
                 }
             }
         }
@@ -203,6 +205,9 @@ pub fn Atlas(comptime config: AtlasConfiguration) type {
             const scale = otf.scaleForPixelHeight(font, size_pixels);
             self.space_advance_scaled = font.space_advance * scale;
 
+            self.advances = try otf.loadXAdvances(allocator, font, codepoint_list, scale);
+            errdefer allocator.free(self.advances);
+
             {
                 var max_width: u32 = 0;
                 var max_height: u32 = 0;
@@ -242,6 +247,7 @@ pub fn Atlas(comptime config: AtlasConfiguration) type {
             allocator.free(self.dimension_list);
             allocator.free(self.kerning_pairs);
             allocator.free(self.codepoint_list);
+            allocator.free(self.advances);
         }
     };
 }

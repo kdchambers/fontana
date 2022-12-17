@@ -385,6 +385,7 @@ pub const FontInfo = extern struct {
     index_map: i32 = 0,
     index_to_loc_format: i32 = 0,
     cmap_encoding_table_offset: u32 = 0,
+    horizonal_metrics_count: u32 = 0,
 
     ascender: i16,
     descender: i16,
@@ -516,6 +517,19 @@ fn getClassForGlyph(class_table_data: []const u8, glyph_index: u32) !u16 {
         else => unreachable,
     }
     return 0;
+}
+
+pub fn loadXAdvances(allocator: std.mem.Allocator, font: FontInfo, codepoints: []const u8, scale: f32) ![]f32 {
+    std.debug.assert(!font.hmtx.isNull());
+    var advances = try allocator.alloc(f32, codepoints.len);
+    const entries = @ptrCast([*]const HorizontalMetric, @alignCast(2, &font.data[font.hmtx.offset]));
+    comptime std.debug.assert(@sizeOf(HorizontalMetric) == 4);
+    for (codepoints) |codepoint, codepoint_i| {
+        const glyph_index = findGlyphIndex(font, codepoint);
+        const index = @min(font.horizonal_metrics_count - 1, glyph_index);
+        advances[codepoint_i] = @intToFloat(f32, std.mem.bigToNative(u16, entries[index].advance_width)) * scale;
+    }
+    return advances;
 }
 
 pub fn generateKernPairsFromGpos(allocator: std.mem.Allocator, font: FontInfo, codepoints: []const u8) ![]KernPair {
@@ -707,7 +721,7 @@ pub fn generateKernPairsFromGpos(allocator: std.mem.Allocator, font: FontInfo, c
         }
     }
 
-    if(!allocator.resize(kern_pairs, kern_count)) {
+    if (!allocator.resize(kern_pairs, kern_count)) {
         std.log.warn("Failed to shrink KernPair array", .{});
     }
 
@@ -835,6 +849,7 @@ pub fn parseFromBytes(font_data: []u8) !FontInfo {
         .data = font_data.ptr,
         .data_len = @intCast(u32, font_data.len),
         .hhea = data_sections.hhea,
+        .hmtx = data_sections.hmtx,
         .loca = data_sections.loca,
         .glyf = data_sections.glyf,
         .gpos = data_sections.gpos,
@@ -958,7 +973,6 @@ pub fn parseFromBytes(font_data: []u8) !FontInfo {
         return error.InvalidPlatform;
     };
 
-    var long_hor_metrics_count: u16 = undefined;
     {
         var fixed_buffer_stream = std.io.FixedBufferStream([]const u8){
             .buffer = font_data,
@@ -967,8 +981,8 @@ pub fn parseFromBytes(font_data: []u8) !FontInfo {
         var reader = fixed_buffer_stream.reader();
 
         try reader.skipBytes(17 * @sizeOf(u16), .{});
-        long_hor_metrics_count = try reader.readIntBig(u16);
-        std.debug.assert(long_hor_metrics_count > 0);
+        font_info.horizonal_metrics_count = try reader.readIntBig(u16);
+        std.debug.assert(font_info.horizonal_metrics_count > 0);
     }
 
     {
@@ -978,11 +992,11 @@ pub fn parseFromBytes(font_data: []u8) !FontInfo {
         };
         var reader = fixed_buffer_stream.reader();
         const space_glyph_index = findGlyphIndex(font_info, ' ');
-        if (space_glyph_index < long_hor_metrics_count) {
+        if (space_glyph_index < font_info.horizonal_metrics_count) {
             try reader.skipBytes(space_glyph_index * @sizeOf(u32), .{});
             font_info.space_advance = @intToFloat(f32, try reader.readIntBig(u16));
         } else {
-            try reader.skipBytes((long_hor_metrics_count - 1) * @sizeOf(u32), .{});
+            try reader.skipBytes((font_info.horizonal_metrics_count - 1) * @sizeOf(u32), .{});
             font_info.space_advance = @intToFloat(f32, try reader.readIntBig(u16));
         }
     }
