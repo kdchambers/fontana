@@ -21,10 +21,10 @@ pub export fn otfParseFromBytes(byte_array: [*]u8, len: u32, out_font: *otf.Font
 }
 
 pub export fn otfRasterizeGlyphAlloc(font: *otf.FontInfo, scale: f32, codepoint: i32, out_bitmap: *otf.Bitmap) i32 {
-    out_bitmap.* = otf.rasterizeGlyphAlloc(std.heap.c_allocator, font.*, scale, codepoint) catch return -1;
+    out_bitmap.* = otf.rasterizeGlyphAlloc(std.heap.c_allocator, font, scale, codepoint) catch return -1;
     return 0;
 }
 
-pub export fn otfScaleForPixelHeight(font: otf.FontInfo, height: f32) f32 {
+pub export fn otfScaleForPixelHeight(font: *otf.FontInfo, height: f32) f32 {
     return otf.scaleForPixelHeight(font, height);
 }

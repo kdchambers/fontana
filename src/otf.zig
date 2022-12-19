@@ -524,20 +524,18 @@ fn getClassForGlyph(class_table_data: []const u8, glyph_index: u32) !u16 {
     return 0;
 }
 
-pub fn loadXAdvances(allocator: std.mem.Allocator, font: FontInfo, codepoints: []const u8, scale: f32) ![]f32 {
+pub fn loadXAdvances(font: *const FontInfo, codepoints: []const u8, out_advance_list: []u16) void {
     std.debug.assert(!font.hmtx.isNull());
-    var advances = try allocator.alloc(f32, codepoints.len);
     const entries = @ptrCast([*]const HorizontalMetric, @alignCast(2, &font.data[font.hmtx.offset]));
     comptime std.debug.assert(@sizeOf(HorizontalMetric) == 4);
     for (codepoints) |codepoint, codepoint_i| {
         const glyph_index = findGlyphIndex(font, codepoint);
         const index = @min(font.horizonal_metrics_count - 1, glyph_index);
-        advances[codepoint_i] = @intToFloat(f32, std.mem.bigToNative(u16, entries[index].advance_width)) * scale;
+        out_advance_list[codepoint_i] = std.mem.bigToNative(u16, entries[index].advance_width);
     }
-    return advances;
 }
 
-pub fn generateKernPairsFromGpos(allocator: std.mem.Allocator, font: FontInfo, codepoints: []const u8) ![]KernPair {
+pub fn generateKernPairsFromGpos(allocator: std.mem.Allocator, font: *const FontInfo, codepoints: []const u8) ![]KernPair {
     var fixed_buffer_stream = std.io.FixedBufferStream([]const u8){
         .buffer = font.data[0..font.data_len],
         .pos = font.gpos.offset,
@@ -773,8 +771,6 @@ pub fn parseFromBytes(font_data: []u8) !FontInfo {
             const offset = try reader.readIntBig(u32);
             const length = try reader.readIntBig(u32);
 
-            std.debug.print("{d:2}.    {s}\n", .{ i + 1, tag });
-
             if (std.mem.eql(u8, "cmap", tag)) {
                 data_sections.cmap.set(offset, length);
                 continue;
@@ -909,7 +905,6 @@ pub fn parseFromBytes(font_data: []u8) !FontInfo {
         _ = version_major;
         _ = version_minor;
         font_info.glyph_count = try reader.readIntBig(u16);
-        std.log.info("Glyphs found: {d}", .{font_info.glyph_count});
     }
 
     var head: Head = undefined;
@@ -1008,7 +1003,7 @@ pub fn parseFromBytes(font_data: []u8) !FontInfo {
             .pos = data_sections.hmtx.offset,
         };
         var reader = fixed_buffer_stream.reader();
-        const space_glyph_index = findGlyphIndex(font_info, ' ');
+        const space_glyph_index = findGlyphIndex(&font_info, ' ');
         if (space_glyph_index < font_info.horizonal_metrics_count) {
             try reader.skipBytes(space_glyph_index * @sizeOf(u32), .{});
             font_info.space_advance = @intToFloat(f32, try reader.readIntBig(u16));
@@ -1052,7 +1047,7 @@ const Vertex = packed struct {
     is_active: u8 = 0,
 };
 
-pub fn findGlyphIndex(font_info: FontInfo, unicode_codepoint: i32) u32 {
+pub fn findGlyphIndex(font_info: *const FontInfo, unicode_codepoint: i32) u32 {
     const data = font_info.data[0..font_info.data_len];
     const encoding_offset = font_info.cmap_encoding_table_offset;
 
@@ -1129,17 +1124,17 @@ inline fn readBigEndian(comptime T: type, index: usize) T {
     return bigToNative(T, @intToPtr(*T, index).*);
 }
 
-pub fn getAscent(font: FontInfo) i16 {
+pub fn getAscent(font: *const FontInfo) i16 {
     const offset = font.hhea.offset + TableHHEA.index.ascender;
     return readBigEndian(i16, @ptrToInt(font.data.ptr) + offset);
 }
 
-pub fn getDescent(font: FontInfo) i16 {
+pub fn getDescent(font: *const FontInfo) i16 {
     const offset = font.hhea.offset + TableHHEA.index.descender;
     return readBigEndian(i16, @ptrToInt(font.data.ptr) + offset);
 }
 
-fn parseGlyfTableIndexForGlyph(font: FontInfo, glyph_index: u32) !usize {
+fn parseGlyfTableIndexForGlyph(font: *const FontInfo, glyph_index: u32) !usize {
     if (glyph_index >= font.glyph_count) return error.InvalidGlyphIndex;
 
     const font_data_start_index = @ptrToInt(&font.data[0]);
@@ -1172,7 +1167,8 @@ fn parseGlyfTableIndexForGlyph(font: FontInfo, glyph_index: u32) !usize {
     return glyph_data_offset;
 }
 
-pub fn calculateGlyphBoundingBox(font: FontInfo, glyph_index: u32) !geometry.BoundingBox(i32) {
+pub fn boundingBoxForCodepoint(font: *const FontInfo, codepoint: i32) !geometry.BoundingBox(i32) {
+    const glyph_index = findGlyphIndex(font, codepoint);
     const section_index: usize = try parseGlyfTableIndexForGlyph(font, glyph_index);
     const font_data_start_index = @ptrToInt(&font.data[0]);
     const base_index: usize = font_data_start_index + section_index;
@@ -1184,7 +1180,19 @@ pub fn calculateGlyphBoundingBox(font: FontInfo, glyph_index: u32) !geometry.Bou
     };
 }
 
-pub fn calculateGlyphBoundingBoxScaled(font: FontInfo, glyph_index: u32, scale: f64) !geometry.BoundingBox(f64) {
+pub fn calculateGlyphBoundingBox(font: *const FontInfo, glyph_index: u32) !geometry.BoundingBox(i32) {
+    const section_index: usize = try parseGlyfTableIndexForGlyph(font, glyph_index);
+    const font_data_start_index = @ptrToInt(&font.data[0]);
+    const base_index: usize = font_data_start_index + section_index;
+    return geometry.BoundingBox(i32){
+        .x0 = bigToNative(i16, @intToPtr(*i16, base_index + 2).*), // min_x
+        .y0 = bigToNative(i16, @intToPtr(*i16, base_index + 4).*), // min_y
+        .x1 = bigToNative(i16, @intToPtr(*i16, base_index + 6).*), // max_x
+        .y1 = bigToNative(i16, @intToPtr(*i16, base_index + 8).*), // max_y
+    };
+}
+
+pub fn calculateGlyphBoundingBoxScaled(font: *const FontInfo, glyph_index: u32, scale: f64) !geometry.BoundingBox(f64) {
     const unscaled = try calculateGlyphBoundingBox(font, glyph_index);
     return geometry.BoundingBox(f64){
         .x0 = @intToFloat(f64, unscaled.x0) * scale,
@@ -1197,7 +1205,7 @@ pub fn calculateGlyphBoundingBoxScaled(font: FontInfo, glyph_index: u32, scale: 
 pub fn rasterizeGlyph(
     allocator: std.mem.Allocator,
     pixel_writer: anytype,
-    font: FontInfo,
+    font: *const FontInfo,
     scale: f32,
     codepoint: i32,
 ) !Bitmap {
@@ -1228,20 +1236,25 @@ pub fn rasterizeGlyph(
     };
 
     const outlines = try createOutlines(allocator, vertices, @intToFloat(f64, dimensions.height), scale);
-    defer allocator.free(outlines);
+    defer {
+        for (outlines) |*outline| {
+            allocator.free(outline.segments);
+        }
+        allocator.free(outlines);
+    }
 
     var bitmap = Bitmap{
         .width = dimensions.width,
         .height = dimensions.height,
         .pixels = undefined,
     };
-    try rasterizer.rasterize(graphics.RGBA(f32), allocator, dimensions, outlines, pixel_writer);
+    try rasterizer.rasterize(graphics.RGBA(f32), dimensions, outlines, pixel_writer);
     return bitmap;
 }
 
 pub fn rasterizeGlyphAlloc(
     allocator: std.mem.Allocator,
-    font: FontInfo,
+    font: *const FontInfo,
     scale: f32,
     codepoint: i32,
 ) !Bitmap {
@@ -1272,7 +1285,12 @@ pub fn rasterizeGlyphAlloc(
     };
 
     const outlines = try createOutlines(allocator, vertices, @intToFloat(f64, dimensions.height), scale);
-    defer allocator.free(outlines);
+    defer {
+        for (outlines) |*outline| {
+            allocator.free(outline.segments);
+        }
+        allocator.free(outlines);
+    }
 
     var bitmap = Bitmap{
         .width = dimensions.width,
@@ -1293,7 +1311,7 @@ pub fn rasterizeGlyphAlloc(
         },
         .pixels = bitmap.pixels,
     };
-    try rasterizer.rasterize(graphics.RGBA(f32), allocator, dimensions, outlines, pixel_writer);
+    try rasterizer.rasterize(graphics.RGBA(f32), dimensions, outlines, pixel_writer);
     return bitmap;
 }
 
@@ -1355,7 +1373,7 @@ fn isFlagSet(value: u8, bit_mask: u8) bool {
 /// desired_height. This uses the bounding box of the entire font, not a specific
 /// glyph. Therefore indiviual rendered glyphs are likely to be under this value,
 /// but never above.
-pub fn scaleForPixelHeight(font: FontInfo, desired_height: f32) f32 {
+pub fn scaleForPixelHeight(font: *const FontInfo, desired_height: f32) f32 {
     const font_data_start_index = @ptrToInt(&font.data[0]);
     const base_index: usize = font_data_start_index + font.hhea.offset;
     const ascender = bigToNative(i16, @intToPtr(*i16, (base_index + 4)).*);
@@ -1364,7 +1382,7 @@ pub fn scaleForPixelHeight(font: FontInfo, desired_height: f32) f32 {
     return desired_height / unscaled_height;
 }
 
-pub fn getRequiredDimensions(font: FontInfo, codepoint: i32, scale: f64) !geometry.Dimensions2D(u32) {
+pub fn getRequiredDimensions(font: *const FontInfo, codepoint: i32, scale: f64) !geometry.Dimensions2D(u32) {
     const glyph_index = findGlyphIndex(font, codepoint);
     const bounding_box = try calculateGlyphBoundingBoxScaled(font, glyph_index, scale);
     std.debug.assert(bounding_box.x1 >= bounding_box.x0);
@@ -1375,7 +1393,7 @@ pub fn getRequiredDimensions(font: FontInfo, codepoint: i32, scale: f64) !geomet
     };
 }
 
-fn loadGlyphVertices(allocator: std.mem.Allocator, font: FontInfo, glyph_index: u32) ![]Vertex {
+fn loadGlyphVertices(allocator: std.mem.Allocator, font: *const FontInfo, glyph_index: u32) ![]Vertex {
     const data = font.data;
     var vertices: []Vertex = undefined;
     var vertices_count: u32 = 0;

@@ -27,30 +27,65 @@ const AtlasConfiguration = struct {
 };
 
 pub fn Atlas(comptime config: AtlasConfiguration) type {
-    const PixelType: type = switch (config.pixel_format) {
-        .rgba_f32 => graphics.RGBA(f32),
-        .rgb_f32 => graphics.RGB(f32),
-        .greyscale_u8 => u8,
-    };
-
-    const CodepointType = switch (config.encoding) {
-        .utf_8 => u32,
-        .ascii => u8,
-    };
-
-    const GlyphIndex = blk: {
-        if (config.override_glyph_index_type) |override_glyph_index_type| {
-            break :blk override_glyph_index_type;
-        }
-        break :blk switch (config.encoding) {
-            .ascii => u8,
-            .utf_8 => u16,
-        };
-    };
-
     return struct {
+        pub const PixelType: type = switch (config.pixel_format) {
+            .rgba_f32 => graphics.RGBA(f32),
+            .rgb_f32 => graphics.RGB(f32),
+            .greyscale_u8 => u8,
+        };
+
+        pub const CodepointType = switch (config.encoding) {
+            .utf_8 => u32,
+            .ascii => u8,
+        };
+
+        const GlyphIndex = blk: {
+            if (config.override_glyph_index_type) |override_glyph_index_type| {
+                break :blk override_glyph_index_type;
+            }
+            break :blk switch (config.encoding) {
+                .ascii => u8,
+                .utf_8 => u16,
+            };
+        };
+
+        pub const FontAdapter = struct {
+            pub const Internal = opaque {};
+
+            internal: *align(8) Internal,
+
+            //
+            // VTable
+            //
+            scaleForPixelHeight: *const fn (self: *const FontAdapter, height_pixels: f32) f32,
+            advanceHorizontalList: *const fn (self: *const FontAdapter, codepoints: []const CodepointType, out_advance_list: []u16) void,
+
+            kernPairList: *const fn (
+                self: *const FontAdapter,
+                allocator: std.mem.Allocator,
+                codepoints: []const CodepointType,
+            ) error{ InvalidFont, InvalidCodepoint, OutOfMemory }![]otf.KernPair,
+
+            glyphBoundingBox: *const fn (
+                self: *const FontAdapter,
+                codepoint: CodepointType,
+            ) error{Unknown}!geometry.BoundingBox(i32),
+
+            rasterizeGlyph: *const fn (
+                self: *const FontAdapter,
+                allocator: std.mem.Allocator,
+                codepoint: CodepointType,
+                scale: f32,
+                texture_pixels: [*]PixelType,
+                texture_dimensions: geometry.Dimensions2D(u32),
+                extent: geometry.Extent2D(u32),
+            ) error{ Unknown, OutOfMemory, InvalidInput }!void,
+        };
+
         texture_buffer: [*]PixelType,
-        texture_dimensions: geometry.Dimensions2D(u16),
+        texture_dimensions: geometry.Dimensions2D(u32),
+
+        font_adapter: *const FontAdapter,
 
         /// List of vertical offsets needed to render
         /// Index corresponds to same index in character_list
@@ -58,16 +93,23 @@ pub fn Atlas(comptime config: AtlasConfiguration) type {
         /// Dimensions in texture of each glyph
         dimension_list: []geometry.Dimensions2D(u32),
         kerning_pairs: []otf.KernPair,
-        advances: []f32,
+        advances: []u16,
 
         row_cell_count: u16,
         cell_dimensions: geometry.Dimensions2D(u16),
         space_advance_scaled: f32,
-
-        font: *otf.FontInfo,
+        size_scale: f32,
 
         /// List of charactors contained in the atlas
         codepoint_list: []CodepointType,
+
+        pub fn atlasDimensions(self: @This()) geometry.Dimensions2D(u16) {
+            const column_count: usize = @divFloor(self.codepoint_list.len, self.row_cell_count);
+            return .{
+                .width = self.cell_dimensions.width * self.row_cell_count,
+                .height = self.cell_dimensions.height * column_count,
+            };
+        }
 
         inline fn indexForCodepoint(self: @This(), codepoint: CodepointType) ?GlyphIndex {
             for (self.codepoint_list) |cp, cp_i| {
@@ -141,15 +183,18 @@ pub fn Atlas(comptime config: AtlasConfiguration) type {
                                     codepoint,
                                     right_codepoint,
                                     kern_advance,
-                                    kern_advance * self.font.scale,
+                                    kern_advance * self.size_scale,
                                 });
-                                cursor.x += kern_advance * self.font.scale * scale_factor.horizontal;
+                                cursor.x += kern_advance * self.size_scale * scale_factor.horizontal;
                                 continue :outer;
                             }
                         }
                     }
-                    const base_advance = self.advances[glyph_index];
+                    const base_advance = @intToFloat(f32, self.advances[glyph_index]) * self.size_scale;
                     cursor.x += base_advance * scale_factor.horizontal;
+                } else {
+                    std.log.warn("Codepoint not in atlas: '{c}'", .{codepoint});
+                    std.debug.assert(false);
                 }
             }
         }
@@ -185,14 +230,16 @@ pub fn Atlas(comptime config: AtlasConfiguration) type {
         pub fn init(
             self: *@This(),
             allocator: std.mem.Allocator,
-            font_ptr: *otf.FontInfo,
+            font_adapter: *const FontAdapter,
             codepoint_list: []const CodepointType,
             size_pixels: f32,
+            space_advance: f32,
             texture_buffer: [*]PixelType,
-            texture_dimensions: geometry.Dimensions2D(u16),
+            texture_dimensions: geometry.Dimensions2D(u32),
         ) !void {
-            const font = font_ptr.*;
-
+            self.font_adapter = font_adapter;
+            self.size_scale = font_adapter.scaleForPixelHeight(font_adapter, size_pixels);
+            self.space_advance_scaled = space_advance;
             self.texture_buffer = texture_buffer;
             self.texture_dimensions = texture_dimensions;
 
@@ -207,27 +254,30 @@ pub fn Atlas(comptime config: AtlasConfiguration) type {
 
             std.mem.copy(CodepointType, self.codepoint_list, codepoint_list);
 
-            self.kerning_pairs = try otf.generateKernPairsFromGpos(allocator, font, codepoint_list);
+            self.kerning_pairs = try font_adapter.kernPairList(font_adapter, allocator, codepoint_list);
             errdefer allocator.free(self.kerning_pairs);
 
-            const scale = otf.scaleForPixelHeight(font, size_pixels);
-            self.space_advance_scaled = font.space_advance * scale;
-
-            font_ptr.scale = scale;
-
-            self.font = font_ptr;
-
-            self.advances = try otf.loadXAdvances(allocator, font, codepoint_list, scale);
+            self.advances = try allocator.alloc(u16, codepoint_list.len);
             errdefer allocator.free(self.advances);
+            font_adapter.advanceHorizontalList(font_adapter, codepoint_list, self.advances);
 
             {
                 var max_width: u32 = 0;
                 var max_height: u32 = 0;
                 for (self.codepoint_list) |codepoint, codepoint_i| {
                     var dimension = &self.dimension_list[codepoint_i];
-                    dimension.* = try otf.getRequiredDimensions(font, codepoint, scale);
-                    const bounding_box = try otf.calculateGlyphBoundingBoxScaled(font, otf.findGlyphIndex(font, codepoint), scale);
-                    self.vertical_offset_list[codepoint_i] = @floatCast(f32, -bounding_box.y0);
+                    const bounding_box = try font_adapter.glyphBoundingBox(font_adapter, codepoint);
+                    const bounding_box_scaled = geometry.BoundingBox(f64){
+                        .x0 = @intToFloat(f64, bounding_box.x0) * self.size_scale,
+                        .y0 = @intToFloat(f64, bounding_box.y0) * self.size_scale,
+                        .x1 = @intToFloat(f64, bounding_box.x1) * self.size_scale,
+                        .y1 = @intToFloat(f64, bounding_box.y1) * self.size_scale,
+                    };
+                    dimension.* = .{
+                        .width = @floatToInt(u32, @ceil(bounding_box_scaled.x1) - @floor(bounding_box_scaled.x0)),
+                        .height = @floatToInt(u32, @ceil(bounding_box_scaled.y1) - @floor(bounding_box_scaled.y0)),
+                    };
+                    self.vertical_offset_list[codepoint_i] = @intToFloat(f32, -bounding_box.y0) * self.size_scale;
                     max_width = @max(max_width, dimension.width);
                     max_height = @max(max_height, dimension.height);
                 }
@@ -237,20 +287,22 @@ pub fn Atlas(comptime config: AtlasConfiguration) type {
                 };
             }
             self.row_cell_count = @floatToInt(u16, @sqrt(@intToFloat(f64, codepoint_list.len)));
-            var pixel_writer = rasterizer.SubTexturePixelWriter(graphics.RGBA(f32)){
-                .texture_width = texture_dimensions.width,
-                .pixels = texture_buffer,
-                .write_extent = .{
+            for (codepoint_list) |codepoint, codepoint_i| {
+                const extent = geometry.Extent2D(u32){
+                    .x = self.cell_dimensions.width * @intCast(u32, codepoint_i % self.row_cell_count),
+                    .y = self.cell_dimensions.height * @intCast(u32, @divFloor(codepoint_i, self.row_cell_count)),
                     .width = self.cell_dimensions.width,
                     .height = self.cell_dimensions.height,
-                    .x = undefined,
-                    .y = undefined,
-                },
-            };
-            for (codepoint_list) |codepoint, codepoint_i| {
-                pixel_writer.write_extent.x = self.cell_dimensions.width * @intCast(u32, codepoint_i % self.row_cell_count);
-                pixel_writer.write_extent.y = self.cell_dimensions.height * @intCast(u32, @divFloor(codepoint_i, self.row_cell_count));
-                _ = try otf.rasterizeGlyph(allocator, pixel_writer, font, scale, codepoint);
+                };
+                try font_adapter.rasterizeGlyph(
+                    font_adapter,
+                    allocator,
+                    codepoint,
+                    self.size_scale,
+                    texture_buffer,
+                    texture_dimensions,
+                    extent,
+                );
             }
         }
 

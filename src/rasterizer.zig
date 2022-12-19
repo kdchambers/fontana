@@ -439,7 +439,6 @@ fn assertYNormalized(point: Point(f64)) void {
 
 pub fn rasterize(
     comptime PixelType: type,
-    allocator: std.mem.Allocator,
     dimensions: geometry.Dimensions2D(u32),
     outlines: []Outline,
     pixel_writer: anytype,
@@ -566,10 +565,6 @@ pub fn rasterize(
         }
         intersections_upper = intersections_lower;
     }
-
-    for (outlines) |*outline| {
-        allocator.free(outline.segments);
-    }
 }
 
 fn doAntiAliasing(
@@ -642,7 +637,7 @@ fn doAntiAliasing(
             assertNormalized(interpolated_point);
             coverage += geometry.triangleArea(interpolated_point, previous_point, fill_anchor_point);
             if (coverage > coverage_weight) {
-                std.log.warn("Coverage set to 1.0 from {d} in g_aa next pixel", .{coverage});
+                // std.log.warn("Coverage set to 1.0 from {d} in g_aa next pixel", .{coverage});
             }
             coverage = @min(coverage, coverage_weight);
             pixel_writer.add(
@@ -690,7 +685,7 @@ fn doAntiAliasing(
     coverage += geometry.triangleArea(end_point, previous_point, fill_anchor_point);
     coverage += geometry.triangleArea(.{ .x = 1.0, .y = point_right.y }, end_point, fill_anchor_point);
     if (coverage > coverage_weight) {
-        std.log.warn("Coverage set to 1.0 from {d} in g_aa next pixel", .{coverage});
+        // std.log.warn("Coverage set to 1.0 from {d} in g_aa next pixel", .{coverage});
     }
     coverage = @min(coverage, coverage_weight);
     pixel_writer.add(
@@ -768,7 +763,7 @@ fn rasterize2Point(
             coverage += geometry.triangleArea(fill_anchor_point, interpolated_point, .{ .x = 1.0, .y = fill_anchor_point.y });
 
             if (coverage > coverage_weight) {
-                std.log.warn("Clamping coverage from {d}", .{coverage});
+                // std.log.warn("Clamping coverage from {d}", .{coverage});
                 coverage = coverage_weight;
             }
             std.debug.assert(coverage >= 0.0);
@@ -834,7 +829,7 @@ fn rasterize2Point(
 
     coverage += geometry.triangleArea(end_point, previous_sampled_point, fill_anchor_point);
     if (coverage > coverage_weight) {
-        std.log.warn("Coverage set to 1.0 from {d} in g_aa next pixel", .{coverage});
+        // std.log.warn("Coverage set to 1.0 from {d} in g_aa next pixel", .{coverage});
     }
     coverage = @min(coverage, coverage_weight);
     if (subtract) {
