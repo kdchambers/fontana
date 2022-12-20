@@ -251,8 +251,7 @@ pub fn SubTexturePixelWriter(comptime PixelType: type) type {
         write_extent: geometry.Extent2D(u32),
         pixels: [*]PixelType,
 
-        pub inline fn add(self: @This(), coords: geometry.Coordinates2D(usize), coverage: f64, mask: [3]f32) void {
-            _ = mask;
+        pub inline fn add(self: @This(), coords: geometry.Coordinates2D(usize), coverage: f64) void {
             const x = coords.x;
             const y = coords.y;
             std.debug.assert(coverage >= 0);
@@ -300,8 +299,7 @@ pub fn SubTexturePixelWriter(comptime PixelType: type) type {
             }
         }
 
-        pub inline fn set(self: @This(), coords: geometry.Coordinates2D(usize), coverage: f64, mask: [3]f32) void {
-            _ = mask;
+        pub inline fn set(self: @This(), coords: geometry.Coordinates2D(usize), coverage: f64) void {
             const x = coords.x;
             const y = coords.y;
             std.debug.assert(x >= 0);
@@ -535,11 +533,7 @@ pub fn rasterize(
                 //
                 var i: usize = @intCast(usize, fill_start);
                 while (i <= @intCast(usize, fill_end)) : (i += 1) {
-                    pixel_writer.add(
-                        .{ .x = i, .y = pixel_y },
-                        1.0 * scanline_increment,
-                        pixel_mask.normal,
-                    );
+                    pixel_writer.add(.{ .x = i, .y = pixel_y }, 1.0 * scanline_increment);
                 }
             } else {
                 //
@@ -597,7 +591,6 @@ fn doAntiAliasing(
         pixel_writer.add(
             .{ .x = pixel_start, .y = pixel_y },
             if (invert) coverage else coverage_weight - coverage,
-            pixel_mask.normal,
         );
         return;
     }
@@ -643,7 +636,6 @@ fn doAntiAliasing(
             pixel_writer.add(
                 .{ .x = pixel_x, .y = pixel_y },
                 if (invert) coverage_weight - coverage else coverage,
-                pixel_mask.normal,
             );
 
             previous_point = .{ .x = 0.0, .y = interpolated_point.y };
@@ -691,7 +683,6 @@ fn doAntiAliasing(
     pixel_writer.add(
         .{ .x = pixel_end, .y = pixel_y },
         if (invert) coverage_weight - coverage else coverage,
-        pixel_mask.normal,
     );
 }
 
@@ -777,7 +768,6 @@ fn rasterize2Point(
                 pixel_writer.add(
                     .{ .x = pixel_x, .y = y_index },
                     coverage,
-                    pixel_mask.normal,
                 );
             }
 
@@ -841,7 +831,6 @@ fn rasterize2Point(
         pixel_writer.add(
             .{ .x = pixel_x, .y = y_index },
             coverage,
-            pixel_mask.normal,
         );
     }
 }
