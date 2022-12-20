@@ -1052,9 +1052,8 @@ pub fn findGlyphIndex(font_info: *const FontInfo, unicode_codepoint: i32) u32 {
     const encoding_offset = font_info.cmap_encoding_table_offset;
 
     if (unicode_codepoint > 0xffff) {
-        std.log.info("Invalid codepoint", .{});
+        std.log.err("Invalid codepoint", .{});
         std.debug.assert(false);
-        return 0;
     }
 
     const base_index: usize = @ptrToInt(data.ptr) + encoding_offset;
@@ -1208,7 +1207,7 @@ pub fn rasterizeGlyph(
     font: *const FontInfo,
     scale: f32,
     codepoint: i32,
-) !Bitmap {
+) !void {
     const glyph_index = findGlyphIndex(font, codepoint);
     const vertices: []Vertex = try loadGlyphVertices(allocator, font, glyph_index);
     defer allocator.free(vertices);
@@ -1243,13 +1242,7 @@ pub fn rasterizeGlyph(
         allocator.free(outlines);
     }
 
-    var bitmap = Bitmap{
-        .width = dimensions.width,
-        .height = dimensions.height,
-        .pixels = undefined,
-    };
     try rasterizer.rasterize(graphics.RGBA(f32), dimensions, outlines, pixel_writer);
-    return bitmap;
 }
 
 pub fn rasterizeGlyphAlloc(
