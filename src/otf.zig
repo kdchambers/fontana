@@ -536,13 +536,13 @@ pub fn loadXAdvances(font: *const FontInfo, codepoints: []const u8, out_advance_
 }
 
 pub fn generateKernPairsFromGpos(allocator: std.mem.Allocator, font: *const FontInfo, codepoints: []const u8) ![]KernPair {
+    if (font.gpos.isNull()) return &[0]KernPair{};
+
     var fixed_buffer_stream = std.io.FixedBufferStream([]const u8){
         .buffer = font.data[0..font.data_len],
         .pos = font.gpos.offset,
     };
     var reader = fixed_buffer_stream.reader();
-
-    std.debug.assert(!font.gpos.isNull());
 
     const version_major = try reader.readIntBig(i16);
     const version_minor = try reader.readIntBig(i16);
