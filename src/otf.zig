@@ -388,13 +388,14 @@ pub const FontInfo = extern struct {
     horizonal_metrics_count: u32 = 0,
 
     scale: f32 = 1.0,
-    ascender: i16,
-    descender: i16,
-    line_gap: i16,
-    break_char: u16,
-    default_char: u16,
+    ascender: i16 = -1,
+    descender: i16 = -1,
+    line_gap: i16 = -1,
+    break_char: u16 = 0,
+    default_char: u16 = 0,
+    units_per_em: u16 = 0,
 
-    space_advance: f32,
+    space_advance: f32 = 0,
 
     pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
         allocator.free(self.data[0..self.data_len]);
@@ -925,7 +926,7 @@ pub fn parseFromBytes(font_data: []u8) !FontInfo {
 
         head.flags = try reader.readStruct(Head.Flags);
 
-        head.units_per_em = try reader.readIntBig(u16);
+        font_info.units_per_em = try reader.readIntBig(u16);
         head.created_timestamp = try reader.readIntBig(i64);
         head.modified_timestamp = try reader.readIntBig(i64);
 
