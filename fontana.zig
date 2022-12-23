@@ -7,9 +7,7 @@ pub const rasterizer = @import("src/rasterizer.zig");
 pub const geometry = @import("src/geometry.zig");
 pub const graphics = @import("src/graphics.zig");
 
-const atlas = @import("src/atlas.zig");
-pub const Atlas = atlas.Atlas;
-pub const AtlasConfiguration = atlas.AtlasConfiguration;
+pub const Atlas = @import("src/Atlas.zig");
 
 //
 // Exported C API
