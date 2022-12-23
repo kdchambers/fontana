@@ -8,6 +8,7 @@ pub const geometry = @import("src/geometry.zig");
 pub const graphics = @import("src/graphics.zig");
 
 pub const Atlas = @import("src/Atlas.zig");
+pub const drawText = @import("src/writer.zig").drawText;
 
 //
 // Exported C API
