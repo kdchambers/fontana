@@ -536,6 +536,20 @@ pub fn loadXAdvances(font: *const FontInfo, codepoints: []const u8, out_advance_
     }
 }
 
+pub fn leftBearingForGlyph(font: *const FontInfo, glyph_index: u32) i16 {
+    std.debug.assert(!font.hmtx.isNull());
+    const entries = @ptrCast([*]const HorizontalMetric, @alignCast(2, &font.data[font.hmtx.offset]));
+    const index = @min(font.horizonal_metrics_count - 1, glyph_index);
+    return std.mem.bigToNative(i16, entries[index].leftside_bearing);
+}
+
+pub fn advanceXForGlyph(font: *const FontInfo, glyph_index: u32) u16 {
+    std.debug.assert(!font.hmtx.isNull());
+    const entries = @ptrCast([*]const HorizontalMetric, @alignCast(2, &font.data[font.hmtx.offset]));
+    const index = @min(font.horizonal_metrics_count - 1, glyph_index);
+    return std.mem.bigToNative(u16, entries[index].advance_width);
+}
+
 pub fn generateKernPairsFromGpos(allocator: std.mem.Allocator, font: *const FontInfo, codepoints: []const u8) ![]KernPair {
     if (font.gpos.isNull()) return &[0]KernPair{};
 
@@ -1361,6 +1375,14 @@ const VMove = enum(u8) {
 
 fn isFlagSet(value: u8, bit_mask: u8) bool {
     return (value & bit_mask) != 0;
+}
+
+pub inline fn pixelPerEmScale(point_size: f64, ppi: f64) f64 {
+    return point_size * ppi / 72;
+}
+
+pub inline fn fUnitToPixelScale(point_size: f64, ppi: f64, units_per_em: u16) f64 {
+    return (point_size * ppi) / (72 * @intToFloat(f32, units_per_em));
 }
 
 /// Calculates the required scale value to generate glyphs with a max height of
