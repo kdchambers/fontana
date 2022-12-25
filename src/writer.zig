@@ -14,6 +14,10 @@ pub fn drawText(
     font_interface: anytype,
 ) !void {
     var cursor = placement;
+    const font_scale = font_interface.scaleForPointSize(point_size);
+    const texture_dimensions = font_interface.textureDimensions();
+    const texture_width = @intToFloat(f32, texture_dimensions.width);
+    const texture_height = @intToFloat(f32, texture_dimensions.height);
     var i: usize = 0;
     while (i < codepoints.len) : (i += 1) {
         const codepoint = codepoints[i];
@@ -32,12 +36,7 @@ pub fn drawText(
         };
 
         const glyph_texture_extent = font_interface.textureExtentFromIndex(codepoint);
-        const texture_dimensions = font_interface.textureDimensions();
         const glyph_info = font_interface.glyphInfoFromIndex(glyph_index);
-        const font_scale = font_interface.scaleForPointSize(point_size);
-
-        const texture_width = @intToFloat(f32, texture_dimensions.width);
-        const texture_height = @intToFloat(f32, texture_dimensions.height);
         const texture_extent = geometry.Extent2D(f32){
             .x = @intToFloat(f32, glyph_texture_extent.x) / texture_width,
             .y = @intToFloat(f32, glyph_texture_extent.y) / texture_height,
@@ -55,7 +54,7 @@ pub fn drawText(
         cursor.x += @intToFloat(f64, glyph_info.leftside_bearing) * font_scale * scale_factor.horizontal;
         const screen_extent = geometry.Extent2D(f32){
             .x = @floatCast(f32, cursor.x),
-            .y = @floatCast(f32, cursor.y - (@intToFloat(f32, glyph_info.decent) * font_scale * scale_factor.vertical)),
+            .y = @floatCast(f32, cursor.y + (@intToFloat(f32, glyph_info.decent) * font_scale * scale_factor.vertical)),
             .width = @floatCast(f32, @intToFloat(f64, glyph_texture_extent.width) * scale_factor.horizontal),
             .height = @floatCast(f32, @intToFloat(f64, glyph_texture_extent.height) * scale_factor.vertical),
         };
