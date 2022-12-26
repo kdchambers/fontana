@@ -14,7 +14,8 @@ pub fn drawText(
     font_interface: anytype,
 ) !void {
     var cursor = placement;
-    const font_scale = font_interface.scaleForPointSize(point_size);
+
+    font_interface.setSizePoint(point_size);
     const texture_dimensions = font_interface.textureDimensions();
     const texture_width = @intToFloat(f32, texture_dimensions.width);
     const texture_height = @intToFloat(f32, texture_dimensions.height);
@@ -51,16 +52,16 @@ pub fn drawText(
         std.debug.assert(texture_extent.width <= 1.0);
         std.debug.assert(texture_extent.height <= 1.0);
 
-        cursor.x += @intToFloat(f64, glyph_info.leftside_bearing) * font_scale * scale_factor.horizontal;
+        cursor.x += glyph_info.leftside_bearing * scale_factor.horizontal;
         const screen_extent = geometry.Extent2D(f32){
             .x = @floatCast(f32, cursor.x),
-            .y = @floatCast(f32, cursor.y + (@intToFloat(f32, glyph_info.decent) * font_scale * scale_factor.vertical)),
+            .y = @floatCast(f32, cursor.y + (@floatCast(f32, glyph_info.decent) * scale_factor.vertical)),
             .width = @floatCast(f32, @intToFloat(f64, glyph_texture_extent.width) * scale_factor.horizontal),
             .height = @floatCast(f32, @intToFloat(f64, glyph_texture_extent.height) * scale_factor.vertical),
         };
         try writer_interface.write(screen_extent, texture_extent);
-        const advance_x: u16 = font_interface.kernPairAdvance() orelse glyph_info.advance_x;
-        cursor.x += @floatCast(f32, @intToFloat(f64, advance_x) * font_scale * scale_factor.horizontal);
+        const advance_x: f64 = font_interface.kernPairAdvance() orelse glyph_info.advance_x;
+        cursor.x += @floatCast(f32, advance_x * scale_factor.horizontal);
 
         std.debug.assert(cursor.x >= -1.0);
         std.debug.assert(cursor.x <= 1.0);
