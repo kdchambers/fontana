@@ -1726,5 +1726,10 @@ fn createOutlines(allocator: std.mem.Allocator, vertices: []Vertex, height: f64,
             }
         }
     }
+
+    for (outlines) |*outline| {
+        outline.calculateBoundingBox();
+    }
+
     return outlines;
 }

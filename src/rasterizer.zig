@@ -10,6 +10,11 @@ const is_debug = if (builtin.mode == .Debug) true else false;
 
 const Point = geometry.Point;
 
+const YRange = struct {
+    upper: f64,
+    lower: f64,
+};
+
 const YIntersection = struct {
     outline_index: u32,
     x_intersect: f64,
@@ -114,7 +119,7 @@ const IntersectionList = struct {
     }
 
     inline fn toSlice(self: *const @This()) []const YIntersection {
-        const start_index = if (self.upper_index_start < self.lower_index_start) self.upper_index_start else self.lower_index_start;
+        const start_index = @min(self.upper_index_start, self.lower_index_start);
         return self.buffer[start_index .. start_index + (self.upper_count + self.lower_count)];
     }
 
@@ -200,8 +205,40 @@ const IntersectionList = struct {
     }
 };
 
+inline fn clamp(value: f64, lower: f64, upper: f64) f64 {
+    return @min(@max(value, lower), upper);
+}
+
 pub const Outline = struct {
     segments: []OutlineSegment,
+    y_range: YRange,
+
+    pub fn calculateBoundingBox(self: *@This()) void {
+        self.y_range = .{ .lower = 1000, .upper = -1000.0 };
+        for (self.segments) |*segment| {
+            const point_a = segment.from;
+            const point_b = segment.to;
+            segment.y_range.lower = @min(point_a.y, point_b.y);
+            segment.y_range.upper = @max(point_a.y, point_b.y);
+            if (segment.isCurve()) {
+                const control_point = segment.control;
+                if (control_point.y > segment.y_range.upper or control_point.y < segment.y_range.lower) {
+                    const t_unclamped = (point_a.y - control_point.y) / (point_a.y - (2.0 * control_point.y) + point_b.y);
+                    const t = clamp(t_unclamped, 0.0, 1.0);
+                    const s = 1.0 - t;
+                    const q = s * s * point_a.y + (2.0 * s * t * control_point.y) + t * t + point_b.y;
+                    segment.y_range.lower = @min(segment.y_range.lower, q);
+                    segment.y_range.upper = @max(segment.y_range.upper, q);
+                }
+            }
+            self.y_range.lower = @min(self.y_range.lower, segment.y_range.lower);
+            self.y_range.upper = @max(self.y_range.upper, segment.y_range.upper);
+        }
+    }
+
+    pub inline fn withinYBounds(self: @This(), y_scanline: f64) bool {
+        return (y_scanline >= self.y_range.lower and y_scanline <= self.y_range.upper);
+    }
 
     pub fn samplePoint(self: @This(), t: f64) Point(f64) {
         const t_floored: f64 = @floor(t);
@@ -214,6 +251,7 @@ pub const Outline = struct {
 pub const OutlineSegment = struct {
     const null_control: f64 = std.math.floatMin(f64);
 
+    y_range: YRange = undefined,
     from: Point(f64),
     to: Point(f64),
     control: Point(f64) = .{ .x = @This().null_control, .y = undefined },
@@ -222,6 +260,10 @@ pub const OutlineSegment = struct {
 
     pub inline fn isCurve(self: @This()) bool {
         return self.control.x != @This().null_control;
+    }
+
+    pub inline fn withinYBounds(self: @This(), y_scanline: f64) bool {
+        return (y_scanline >= self.y_range.lower and y_scanline <= self.y_range.upper);
     }
 
     pub fn sample(self: @This(), t: f64) Point(f64) {
@@ -1035,21 +1077,15 @@ fn intersectionConnectionLessThan(_: void, lhs: IntersectionConnection, rhs: Int
 fn calculateHorizontalLineIntersections(scanline_y: f64, outlines: []Outline) !YIntersectionList {
     var intersection_list = YIntersectionList{ .len = 0, .buffer = undefined };
     for (outlines) |outline, outline_i| {
+        if (!outline.withinYBounds(scanline_y)) continue;
         const max_t = @intToFloat(f64, outline.segments.len);
         for (outline.segments) |segment, segment_i| {
+            if (!segment.withinYBounds(scanline_y)) continue;
             const point_a = segment.from;
             const point_b = segment.to;
-            const max_y = @max(point_a.y, point_b.y);
-            const min_y = @min(point_a.y, point_b.y);
             if (segment.isCurve()) {
                 const control_point = segment.control;
                 const bezier = geometry.BezierQuadratic{ .a = point_a, .b = point_b, .control = control_point };
-                const inflection_y = geometry.quadradicBezierInflectionPoint(bezier).y;
-                const is_middle_higher = (inflection_y > max_y) and scanline_y > inflection_y;
-                const is_middle_lower = (inflection_y < min_y) and scanline_y < inflection_y;
-                if (is_middle_higher or is_middle_lower) {
-                    continue;
-                }
                 const optional_intersection_points = geometry.quadraticBezierPlaneIntersections(bezier, scanline_y);
                 if (optional_intersection_points[0]) |first_intersection| {
                     {
@@ -1082,13 +1118,6 @@ fn calculateHorizontalLineIntersections(scanline_y: f64, outlines: []Outline) !Y
                 continue;
             }
 
-            //
-            // Outline segment is a line
-            //
-            std.debug.assert(max_y >= min_y);
-            if (scanline_y > max_y or scanline_y < min_y) {
-                continue;
-            }
             if (point_a.y == point_b.y) {
                 continue;
             }
@@ -1106,12 +1135,12 @@ fn calculateHorizontalLineIntersections(scanline_y: f64, outlines: []Outline) !Y
                 break :blk (scanline_y - point_a.y) / (point_b.y - point_a.y);
             };
             std.debug.assert(interp_t >= 0.0 and interp_t <= 1.0);
-            const t = @intToFloat(f64, segment_i) + interp_t;
+            const t = @mod(@intToFloat(f64, segment_i) + interp_t, max_t);
             if (point_a.x == point_b.x) {
                 try intersection_list.add(.{
                     .outline_index = @intCast(u32, outline_i),
                     .x_intersect = point_a.x,
-                    .t = @mod(t, max_t),
+                    .t = t,
                 });
             } else {
                 const x_diff = point_b.x - point_a.x;
@@ -1119,7 +1148,7 @@ fn calculateHorizontalLineIntersections(scanline_y: f64, outlines: []Outline) !Y
                 try intersection_list.add(.{
                     .outline_index = @intCast(u32, outline_i),
                     .x_intersect = x_intersect,
-                    .t = @mod(t, max_t),
+                    .t = t,
                 });
             }
         }
@@ -1128,12 +1157,14 @@ fn calculateHorizontalLineIntersections(scanline_y: f64, outlines: []Outline) !Y
     // TODO: Verify this always has to be true, or remove assert
     std.debug.assert(intersection_list.len % 2 == 0);
 
-    for (intersection_list.toSlice()) |intersection| {
-        std.debug.assert(intersection.outline_index >= 0);
-        std.debug.assert(intersection.outline_index < outlines.len);
-        const max_t = @intToFloat(f64, outlines[intersection.outline_index].segments.len);
-        std.debug.assert(intersection.t >= 0.0);
-        std.debug.assert(intersection.t < max_t);
+    if (is_debug) {
+        for (intersection_list.toSlice()) |intersection| {
+            std.debug.assert(intersection.outline_index >= 0);
+            std.debug.assert(intersection.outline_index < outlines.len);
+            const max_t = @intToFloat(f64, outlines[intersection.outline_index].segments.len);
+            std.debug.assert(intersection.t >= 0.0);
+            std.debug.assert(intersection.t < max_t);
+        }
     }
 
     // Sort by x_intersect ascending
@@ -1147,12 +1178,14 @@ fn calculateHorizontalLineIntersections(scanline_y: f64, outlines: []Outline) !Y
         intersection_list.buffer[@intCast(usize, x + 1)] = key;
     }
 
-    for (intersection_list.buffer[0..intersection_list.len]) |intersection| {
-        std.debug.assert(intersection.outline_index >= 0);
-        std.debug.assert(intersection.outline_index < outlines.len);
-        const max_t = @intToFloat(f64, outlines[intersection.outline_index].segments.len);
-        std.debug.assert(intersection.t >= 0.0);
-        std.debug.assert(intersection.t < max_t);
+    if (is_debug) {
+        for (intersection_list.buffer[0..intersection_list.len]) |intersection| {
+            std.debug.assert(intersection.outline_index >= 0);
+            std.debug.assert(intersection.outline_index < outlines.len);
+            const max_t = @intToFloat(f64, outlines[intersection.outline_index].segments.len);
+            std.debug.assert(intersection.t >= 0.0);
+            std.debug.assert(intersection.t < max_t);
+        }
     }
 
     // TODO: This isn't very clean
