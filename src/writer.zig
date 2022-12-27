@@ -31,13 +31,8 @@ pub fn drawText(
             continue;
         }
 
-        const glyph_index = font_interface.glyphIndexFromCodepoint(codepoint) orelse {
-            std.log.warn("Invalid codepoint {c} passed to Drawer.draw()", .{codepoint});
-            continue;
-        };
-
         const glyph_texture_extent = font_interface.textureExtentFromIndex(codepoint);
-        const glyph_info = font_interface.glyphInfoFromIndex(glyph_index);
+        const glyph_info = font_interface.glyphMetricsFromCodepoint(codepoint);
         const texture_extent = geometry.Extent2D(f32){
             .x = @intToFloat(f32, glyph_texture_extent.x) / texture_width,
             .y = @intToFloat(f32, glyph_texture_extent.y) / texture_height,
