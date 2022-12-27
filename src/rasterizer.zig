@@ -2,8 +2,11 @@
 // Copyright (c) 2022 Keith Chambers
 
 const std = @import("std");
+const builtin = @import("builtin");
 const geometry = @import("geometry.zig");
 const graphics = @import("graphics.zig");
+
+const is_debug = if (builtin.mode == .Debug) true else false;
 
 const Point = geometry.Point;
 
@@ -237,12 +240,6 @@ pub const OutlineSegment = struct {
             .y = self.from.y + (self.to.y - self.from.y) * t,
         };
     }
-};
-
-const pixel_mask = struct {
-    const normal = [3]f32{ 1.0, 1.0, 1.0 };
-    const debug = [3]f32{ 1.0, 0.0, 0.0 };
-    const debug_fill = [3]f32{ 0.0, 0.0, 1.0 };
 };
 
 pub fn SubTexturePixelWriter(comptime PixelType: type) type {
@@ -629,8 +626,8 @@ fn doAntiAliasing(
             const interpolated_point = geometry.interpolateBoundryPoint(previous_point, sampled_point);
             assertNormalized(interpolated_point);
             coverage += geometry.triangleArea(interpolated_point, previous_point, fill_anchor_point);
-            if (coverage > coverage_weight) {
-                // std.log.warn("Coverage set to 1.0 from {d} in g_aa next pixel", .{coverage});
+            if (is_debug and coverage > coverage_weight) {
+                std.log.warn("Coverage set to 1.0 from {d} in g_aa next pixel", .{coverage});
             }
             coverage = @min(coverage, coverage_weight);
             pixel_writer.add(
@@ -662,7 +659,7 @@ fn doAntiAliasing(
         previous_point = sampled_point;
     }
 
-    if (pixel_x != pixel_end) {
+    if (is_debug and pixel_x != pixel_end) {
         std.log.warn("s_aa: Not ending on last pixel. Expected {d} actual {d}", .{
             pixel_end,
             pixel_x,
@@ -676,8 +673,8 @@ fn doAntiAliasing(
 
     coverage += geometry.triangleArea(end_point, previous_point, fill_anchor_point);
     coverage += geometry.triangleArea(.{ .x = 1.0, .y = point_right.y }, end_point, fill_anchor_point);
-    if (coverage > coverage_weight) {
-        // std.log.warn("Coverage set to 1.0 from {d} in g_aa next pixel", .{coverage});
+    if (is_debug and coverage > coverage_weight) {
+        std.log.warn("Coverage set to 1.0 from {d} in g_aa next pixel", .{coverage});
     }
     coverage = @min(coverage, coverage_weight);
     pixel_writer.add(
@@ -754,7 +751,8 @@ fn rasterize2Point(
             coverage += geometry.triangleArea(fill_anchor_point, interpolated_point, .{ .x = 1.0, .y = fill_anchor_point.y });
 
             if (coverage > coverage_weight) {
-                // std.log.warn("Clamping coverage from {d}", .{coverage});
+                if (is_debug)
+                    std.log.warn("Clamping coverage from {d}", .{coverage});
                 coverage = coverage_weight;
             }
             std.debug.assert(coverage >= 0.0);
@@ -805,7 +803,7 @@ fn rasterize2Point(
         previous_sampled_point = sampled_point;
     }
 
-    if (pixel_x != pixel_end) {
+    if (is_debug and pixel_x != pixel_end) {
         std.log.warn("2pt: Not ending on last pixel. Expected {d} actual {d}", .{
             pixel_end,
             pixel_x,
@@ -818,8 +816,8 @@ fn rasterize2Point(
     assertNormalized(end_point);
 
     coverage += geometry.triangleArea(end_point, previous_sampled_point, fill_anchor_point);
-    if (coverage > coverage_weight) {
-        // std.log.warn("Coverage set to 1.0 from {d} in g_aa next pixel", .{coverage});
+    if (is_debug and coverage > coverage_weight) {
+        std.log.warn("Coverage set to 1.0 from {d} in g_aa next pixel", .{coverage});
     }
     coverage = @min(coverage, coverage_weight);
     if (subtract) {
@@ -1162,7 +1160,8 @@ fn calculateHorizontalLineIntersections(scanline_y: f64, outlines: []Outline) !Y
         const a = intersection_list.buffer[0];
         const b = intersection_list.buffer[1];
         if (a.t == b.t) {
-            std.log.warn("Removing pair with same t", .{});
+            if (is_debug)
+                std.log.warn("Removing pair with same t", .{});
             intersection_list.len = 0;
         }
     }
