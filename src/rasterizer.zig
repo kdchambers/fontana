@@ -222,6 +222,9 @@ pub const Outline = struct {
             segment.y_range.upper = @max(point_a.y, point_b.y);
             if (segment.isCurve()) {
                 const control_point = segment.control;
+                //
+                // source: https://iquilezles.org/articles/bezierbbox/
+                //
                 if (control_point.y > segment.y_range.upper or control_point.y < segment.y_range.lower) {
                     const t_unclamped = (point_a.y - control_point.y) / (point_a.y - (2.0 * control_point.y) + point_b.y);
                     const t = clamp(t_unclamped, 0.0, 1.0);

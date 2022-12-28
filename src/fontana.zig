@@ -21,6 +21,7 @@ const FreetypeHarfbuzzImplementation = struct {
     const Self = @This();
 
     const InitFn = *const fn (*freetype.Library) callconv(.C) void;
+    const DoneFn = *const fn (freetype.Library) callconv(.C) i32;
     const NewFaceFn = *const fn (freetype.Library, [*:0]const u8, i64, *freetype.Face) callconv(.C) i32;
     const GetCharIndexFn = *const fn (freetype.Face, u64) callconv(.C) u32;
     const LoadCharFn = *const fn (freetype.Face, u64, freetype.LoadFlags) callconv(.C) i32;
@@ -32,6 +33,7 @@ const FreetypeHarfbuzzImplementation = struct {
     // harfbuzz_font: harfbuzz.Font,
 
     initFn: InitFn,
+    doneFn: DoneFn,
     newFaceFn: NewFaceFn,
     getCharIndexFn: GetCharIndexFn,
     loadCharFn: LoadCharFn,
@@ -42,6 +44,8 @@ const FreetypeHarfbuzzImplementation = struct {
         var freetype_handle = try DynLib.open("libfreetype.so");
         var impl: FreetypeHarfbuzzImplementation = undefined;
 
+        impl.initFn = freetype_handle.lookup(Self.InitFn, "FT_Init_FreeType") orelse return error.LookupFailed;
+        impl.doneFn = freetype_handle.lookup(Self.DoneFn, "FT_Done_FreeType") orelse return error.LookupFailed;
         impl.initFn = freetype_handle.lookup(Self.InitFn, "FT_Init_FreeType") orelse return error.LookupFailed;
         impl.newFaceFn = freetype_handle.lookup(Self.NewFaceFn, "FT_New_Face") orelse return error.LookupFailed;
 
@@ -61,7 +65,7 @@ const FreetypeHarfbuzzImplementation = struct {
     }
 
     pub fn deinit(self: *@This(), _: std.mem.Allocator) void {
-        self.library.deinit();
+        _ = self.doneFn(self.library);
     }
 
     pub inline fn kernPairAdvance(self: *@This()) ?f64 {
