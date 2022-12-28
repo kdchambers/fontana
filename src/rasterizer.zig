@@ -302,15 +302,22 @@ pub fn SubTexturePixelWriter(comptime PixelType: type) type {
             const global_x = self.write_extent.x + x;
             const global_y = self.write_extent.y + y;
             const index = global_x + (self.texture_width * global_y);
-            switch (PixelType) {
-                graphics.RGBA(f32) => {
-                    const c = @floatCast(f32, coverage);
-                    self.pixels[index].r = 0.8;
-                    self.pixels[index].g = 0.8;
-                    self.pixels[index].b = 0.8;
-                    self.pixels[index].a += c;
-                },
-                else => unreachable,
+            const c = @floatCast(f32, coverage);
+
+            // TODO: Detect type using comptime
+            const use_transparency: bool = @hasField(PixelType, "a");
+
+            if (@hasField(PixelType, "r"))
+                self.pixels[index].r = if (use_transparency) 0.8 else self.pixels[index].r + c;
+
+            if (@hasField(PixelType, "g"))
+                self.pixels[index].g = if (use_transparency) 0.8 else self.pixels[index].g + c;
+
+            if (@hasField(PixelType, "b"))
+                self.pixels[index].b = if (use_transparency) 0.8 else self.pixels[index].b + c;
+
+            if (use_transparency) {
+                self.pixels[index].a += c;
             }
         }
 
@@ -326,15 +333,22 @@ pub fn SubTexturePixelWriter(comptime PixelType: type) type {
             const global_x = self.write_extent.x + x;
             const global_y = self.write_extent.y + y;
             const index = global_x + (self.texture_width * global_y);
-            switch (PixelType) {
-                graphics.RGBA(f32) => {
-                    const c = @floatCast(f32, coverage);
-                    self.pixels[index].r = 0.8;
-                    self.pixels[index].g = 0.8;
-                    self.pixels[index].b = 0.8;
-                    self.pixels[index].a -= c;
-                },
-                else => unreachable,
+            const c = @floatCast(f32, coverage);
+
+            // TODO: Detect type using comptime
+            const use_transparency: bool = @hasField(PixelType, "a");
+
+            if (@hasField(PixelType, "r"))
+                self.pixels[index].r = if (use_transparency) 0.8 else self.pixels[index].r - c;
+
+            if (@hasField(PixelType, "g"))
+                self.pixels[index].g = if (use_transparency) 0.8 else self.pixels[index].g - c;
+
+            if (@hasField(PixelType, "b"))
+                self.pixels[index].b = if (use_transparency) 0.8 else self.pixels[index].b - c;
+
+            if (use_transparency) {
+                self.pixels[index].a -= c;
             }
         }
 
@@ -348,15 +362,22 @@ pub fn SubTexturePixelWriter(comptime PixelType: type) type {
             const global_x = self.write_extent.x + x;
             const global_y = self.write_extent.y + y;
             const index = global_x + (self.texture_width * global_y);
-            switch (PixelType) {
-                graphics.RGBA(f32) => {
-                    const c = @floatCast(f32, coverage);
-                    self.pixels[index].r = 0.8;
-                    self.pixels[index].g = 0.8;
-                    self.pixels[index].b = 0.8;
-                    self.pixels[index].a = c;
-                },
-                else => unreachable,
+            const c = @floatCast(f32, coverage);
+
+            // TODO: Detect type using comptime
+            const use_transparency: bool = @hasField(PixelType, "a");
+
+            if (@hasField(PixelType, "r"))
+                self.pixels[index].r = if (use_transparency) 0.8 else c;
+
+            if (@hasField(PixelType, "g"))
+                self.pixels[index].g = if (use_transparency) 0.8 else c;
+
+            if (@hasField(PixelType, "b"))
+                self.pixels[index].b = if (use_transparency) 0.8 else c;
+
+            if (use_transparency) {
+                self.pixels[index].a = c;
             }
         }
     };

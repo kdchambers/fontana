@@ -5,7 +5,7 @@ const Pkg = std.build.Pkg;
 
 pub const pkg = Pkg{
     .name = "fontana",
-    .source = .{ .path = "fontana.zig" },
+    .source = .{ .path = "src/fontana.zig" },
     .dependencies = &{},
 };
 
