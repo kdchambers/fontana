@@ -80,7 +80,7 @@ const pen = try font.createPen(
 
 **NOTE**: *The PixelType is passed by the client and it's properties are detected automatically during rasterization. Unless it's a very irregular type it should just work.*
 
-The `Pen` type has a single purpose, to generate texture quads to a vertex buffer that can be used by a graphics API to draw text to the screen. It only has a single public funcion:
+The `Pen` type has a single purpose, to generate texture quads to a vertex buffer that can be used by a graphics API to draw text to the screen. It only has a single public function:
 
 ```rust
 pub fn write(
@@ -99,13 +99,13 @@ The client specifies what text to render, where to render it on the screen, the 
 ```rust
 fn scaleFromScreenDimensions(width: f64, height: f64) Scale2D(f64) {
     return .{
-        .vertical = 2.0 / dimensions.height,
-        .horizontal = 2.0 / dimensions.width,
+        .vertical = 2.0 / height,
+        .horizontal = 2.0 / width,
     };
 }
 ```
 
-This is because Vulkan uses the NDC right coordinate system, going from -1.0 to +1.0 on both the X and Y axis.
+This is because Vulkan uses the NDC right coordinate system, going from -1.0 to +1.0 (Total length of 2.0) on both the X and Y axis.
 
 `writer_interface` is of a comptime evaluated type, and has to satisfy the following interface:
 
