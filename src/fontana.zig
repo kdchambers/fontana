@@ -38,7 +38,7 @@ const FreetypeHarfbuzzImplementation = struct {
     loadGlyphFn: LoadGlyphFn,
     setCharSizeFn: SetCharSizeFn,
 
-    pub fn loadFromFile(allocator: std.mem.Allocator, font_path: []const u8) !FreetypeHarfbuzzImplementation {
+    pub fn initFromFile(allocator: std.mem.Allocator, font_path: []const u8) !FreetypeHarfbuzzImplementation {
         var freetype_handle = try DynLib.open("libfreetype.so");
         var impl: FreetypeHarfbuzzImplementation = undefined;
 
@@ -100,7 +100,7 @@ const FontanaImplementation = struct {
     font: otf.FontInfo,
     font_scale: f64,
 
-    pub fn loadFromFile(allocator: std.mem.Allocator, font_path: []const u8) !FontanaImplementation {
+    pub fn initFromFile(allocator: std.mem.Allocator, font_path: []const u8) !FontanaImplementation {
         return FontanaImplementation{
             .font = try otf.loadFromFile(allocator, font_path),
             .font_scale = undefined,
@@ -234,9 +234,9 @@ pub fn Font(comptime backend: Backend) type {
 
         internal: BackendImplementation,
 
-        pub fn loadFromFile(allocator: std.mem.Allocator, font_path: []const u8) !@This() {
+        pub fn initFromFile(allocator: std.mem.Allocator, font_path: []const u8) !@This() {
             return @This(){
-                .internal = try BackendImplementation.loadFromFile(allocator, font_path),
+                .internal = try BackendImplementation.initFromFile(allocator, font_path),
             };
         }
 

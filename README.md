@@ -1,28 +1,134 @@
-# fontana
+# Fontana
 
-*OpenType and TrueType font loading and rasterizing library*
+*Toolkit for OpenType / TrueType fonts; text rendering in general*
 
-**Fontana is in development and not ready for use in projects**
+___
 
-## Usage
+**TLDR:** 
 
-This is the high-level overview of how to currently use fontana. It's also possible to render a single glyph to a contigious texture buffer, but generating a font atlas is the most common use-case.
+- In development, but functional
+- TTF / OTF loading + drawing
+- Wrapper over multiple backends
+  - Custom built (Including rasterizer)
+  - Freetype
+  - Freetype & Harfbuzz
+- Intended for use with low-level graphics API (Vulkan, WebGPU, etc)
+- Will later pivot into new simplified Font format intended for projects that have the luxury of embedding fonts (games, operating systems, etc)
 
-    const ttf_buffer = loadTTF("fontname.ttf");
-    var font = try fontana.otf.parseFromBytes(ttf_buffer);
-    var font_atlas: fontana.Atlas(.{
-        .pixel_format = .rgba_f32,
-        .encoding = .ascii,
-    }) = undefined;
+## Scope 
 
-    const codepoints = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890";
-    //
-    // This will write the font bitmap atlas to texture_buffer
-    //
-    try font_atlas.init(allocator, font, codepoints, 80, texture_buffer, texture_dimensions);
-    defer font_atlas.deinit(allocator);
+- Definition of a new Font Format designed primarily for embedded use
+- Converter from TTF / OTF -> Embedded format
+- Easy to use wrapper around Freetype / Harfbuzz for drawing
+- Custom Font loading / rendering backend
 
-For a runnable example, see [fontana-example](https://github.com/kdchambers/fontana-examples). Example projects and binary assets are not to be checked into the main repo to keep it small.
+## API & Usage
+
+**NOTE**: *This only refers to the TTF / OTF loading / drawing capabilities. Custom font format is still a TODO. See [Roadmap](#roadmap) for state of project*
+
+Currently, the API is very simple but provides a lot of flexibility through comptime configuration.
+
+The first step is creating the Font type, which takes a backend as a comptime configuration option. The options are: `fontana`, `freetype` and `freetype_harfbuzz`. In the example below, we're using the custom built `fontana` backend:
+
+```c++
+const font_backend: fontana.Backend = .fontana;
+const Font = fontana.Font(font_backend);
+
+var font = try Font.initFromFile(allocator, font_path);
+defer font.deinit(allocator);
+```
+
+The `Font` type has 3 public functions, `initFromFile()`, `deinit()` and `createPen()`. The first two work as expected, so let's move onto the `Pen` type.
+
+The `Pen` type encapsules an atlas, font size and collection of codepoints. The specified codepoints will be converted into glyphs and rasterised to a texture. If working on an application that will be rendering text at different sizes, you can generate more `Pens` from the same `Font`.
+
+**NOTE**: *The Font Atlas managed by a Pen can share the backing texture with other parts of an application, it only owns the meta-data about what rendered glyphs are stored where.*
+
+Here's the function signature:
+
+```rust
+pub fn createPen(
+    self: *@This(),
+    comptime PixelType: type,
+    allocator: std.mem.Allocator,
+    size: Size,
+    points_per_pixel: f64,
+    codepoints: []const u8,
+    texture_size: u32,
+    texture_pixels: [*]PixelType,
+) !Pen
+```
+
+Continuing the above example, here a `Pen` is created from our font.
+
+```rust
+const PixelType = graphics.RGBA(f32);
+const points_per_pixel = 100;
+const font_size = fontana.Size{ .point = 24.0 };
+const pen = try font.createPen(
+    PixelType,
+    allocator,
+    font_size,
+    points_per_pixel,
+    atlas_codepoints,
+    texture.dimensions.width,
+    texture.pixels,
+);
+```
+
+**NOTE**: *The Atlas only supports square textures, hence texture_size as opposed to texture_dimensions*
+
+**NOTE**: *The PixelType is passed by the client and it's properties are detected automatically during rasterization. Unless it's a very irregular type it should just work.*
+
+The `Pen` type has a single purpose, to generate texture quads to a vertex buffer that can be used by a graphics API to draw text to the screen. It only has a single public funcion:
+
+```rust
+pub fn write(
+    self: *@This(),
+    codepoints: []const u8,
+    placement: geometry.Coordinates2D(f64),
+    screen_scale: geometry.Scale2D(f64),
+    writer_interface: anytype,
+) !void
+```
+
+The client specifies what text to render, where to render it on the screen, the scaling of the screen and a comptime interface used to channel the output.
+
+`screen_scale` converts pixels to the coordinate system of the graphics API, in vulkan it can be calculated as follows:
+
+```rust
+fn scaleFromScreenDimensions(width: f64, height: f64) Scale2D(f64) {
+    return .{
+        .vertical = 2.0 / dimensions.height,
+        .horizontal = 2.0 / dimensions.width,
+    };
+}
+```
+
+This is because Vulkan uses the NDC right coordinate system, going from -1.0 to +1.0 on both the X and Y axis.
+
+`writer_interface` is of a comptime evaluated type, and has to satisfy the following interface:
+
+```rust
+pub fn write(
+    self: *@This(),
+    screen_extent: fontana.geometry.Extent2D(f32),
+    texture_extent: fontana.geometry.Extent2D(f32),
+) !void
+```
+
+All this does is map texture values to locations on the output display, defined in the coordinate system of the underlying graphics API.
+
+## Example
+
+A running example can be found in the example repository [fontana-examples](https://github.com/kdchambers/fontana-examples). 
+Non-essential assets including large amount of code are not checked into the main repo to keep it minimal and automation friendly.
+
+To see the above example in complete form, see [this file specifically](https://github.com/kdchambers/fontana-examples/blob/main/src/main.zig)
+
+## Roadmap
+
+TODO: Add ROADMAP
 
 ## License
 
