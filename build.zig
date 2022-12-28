@@ -13,7 +13,6 @@ pub fn build(b: *Builder) void {
     const buildMode = b.standardReleaseOptions();
 
     const fontana_build_test = b.addTestExe("fontana-tests", "src/fontana.zig");
-    fontana_build_test.linkLibC();
     fontana_build_test.setBuildMode(buildMode);
     fontana_build_test.install();
 
