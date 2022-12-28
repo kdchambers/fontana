@@ -12,7 +12,7 @@ pub const pkg = Pkg{
 pub fn build(b: *Builder) void {
     const buildMode = b.standardReleaseOptions();
 
-    const fontana_build_test = b.addTestExe("fontana-tests", "fontana.zig");
+    const fontana_build_test = b.addTestExe("fontana-tests", "src/fontana.zig");
     fontana_build_test.linkLibC();
     fontana_build_test.setBuildMode(buildMode);
     fontana_build_test.install();
@@ -22,8 +22,4 @@ pub fn build(b: *Builder) void {
 
     const test_step = b.step("test", "Run library tests");
     test_step.dependOn(&run_test_cmd.step);
-
-    const build_only_test_step = b.step("test_build_only", "Build the tests but does not run it");
-    build_only_test_step.dependOn(&fontana_build_test.step);
-    build_only_test_step.dependOn(b.getInstallStep());
 }
