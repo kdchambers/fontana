@@ -129,18 +129,18 @@ const FontanaImplementation = struct {
     }
 };
 
-const Backend = enum {
+pub const Backend = enum {
     freetype,
     freetype_harfbuzz,
     fontana,
 };
 
-const SizeTag = enum {
+pub const SizeTag = enum {
     point,
     pixel,
 };
 
-const Size = union(SizeTag) {
+pub const Size = union(SizeTag) {
     point: f64,
     pixel: f64,
 };
@@ -157,6 +157,8 @@ pub fn Font(comptime backend: Backend) type {
             pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
                 self.atlas.deinit(allocator);
                 allocator.free(self.atlas_entries);
+                self.font = undefined;
+                self.atlas_entries_count = 0;
             }
 
             inline fn textureExtentFromCodepoint(self: *@This(), codepoint: u8) geometry.Extent2D(u32) {
@@ -239,7 +241,7 @@ pub fn Font(comptime backend: Backend) type {
         }
 
         pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
-            self.deinit(allocator);
+            self.internal.deinit(allocator);
         }
 
         inline fn createPenFontana(

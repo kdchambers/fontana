@@ -504,6 +504,22 @@ pub fn rasterize(
     if (PixelType != graphics.RGBA(f32)) {
         @compileError("rasterize function only supports bitmaps of RGBA(f32)");
     }
+
+    //
+    // TODO: This might be expensive and unnecessary. For the moment though it's the safer option to
+    // clear any part of the texture before writing to it. Later on we can add the constraint
+    // that the texture should be cleared in advance, or confirm that cost is minimal
+    //
+    {
+        var y: usize = 0;
+        while (y < dimensions.height) : (y += 1) {
+            var x: usize = 0;
+            while (x < dimensions.width) : (x += 1) {
+                pixel_writer.set(.{ .x = x, .y = y }, 0);
+            }
+        }
+    }
+
     const scanline_increment: f64 = 0.5;
     const scanlines_required = @floatToInt(usize, @divExact(@intToFloat(f64, dimensions.height), scanline_increment));
     var scanline_i: usize = 0;
