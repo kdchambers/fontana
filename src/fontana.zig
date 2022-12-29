@@ -38,13 +38,19 @@ const FreetypeHarfbuzzImplementation = struct {
     const HbDestroyFn = *const fn (?*void) callconv(.C) void;
     const HbFontCreateFn = *const fn (freetype.Face, ?HbDestroyFn) callconv(.C) *harfbuzz.Font;
     const HbFaceCreateFn = *const fn (freetype.Face, ?HbDestroyFn) callconv(.C) *harfbuzz.Face;
+    const HbLanguageFromStringFn = *const fn ([*]const u8, i32) callconv(.C) harfbuzz.Language;
+    const HbShapeFn = *const fn (*harfbuzz.Font, *harfbuzz.Buffer, ?[*]const harfbuzz.Feature, u32) callconv(.C) void;
+
     const HbBufferCreateFn = *const fn () callconv(.C) *harfbuzz.Buffer;
     const HbBufferGuessSegmentPropertiesFn = *const fn (*harfbuzz.Buffer) callconv(.C) void;
-    const HbShapeFn = *const fn (*harfbuzz.Font, *harfbuzz.Buffer, ?[*]const harfbuzz.Feature, u32) callconv(.C) void;
     const HbBufferAddUTF8Fn = *const fn (*harfbuzz.Buffer, [*]const u8, i32, u32, i32) callconv(.C) void;
     const HbBufferGetLengthFn = *const fn (*harfbuzz.Buffer) callconv(.C) u32;
     const HbBufferGetGlyphInfosFn = *const fn (*harfbuzz.Buffer, ?*u32) callconv(.C) [*]harfbuzz.GlyphInfo;
     const HbBufferGetGlyphPositionsFn = *const fn (*harfbuzz.Buffer, ?*u32) callconv(.C) [*]harfbuzz.GlyphPosition;
+    const HbBufferSetDirectionFn = *const fn (*harfbuzz.Buffer, harfbuzz.Direction) callconv(.C) void;
+    const HbBufferSetScriptFn = *const fn (*harfbuzz.Buffer, harfbuzz.Script) callconv(.C) void;
+    const HbBufferSetLanguageFn = *const fn (*harfbuzz.Buffer, harfbuzz.Language) callconv(.C) void;
+    const HbBufferDestroyFn = *const fn (*harfbuzz.Buffer) callconv(.C) void;
 
     initFn: InitFn,
     doneFn: DoneFn,
@@ -57,13 +63,18 @@ const FreetypeHarfbuzzImplementation = struct {
     hbFontCreateFn: HbFontCreateFn,
     hbFaceCreateFn: HbFaceCreateFn,
     hbShapeFn: HbShapeFn,
+    hbLanguageFromStringFn: HbLanguageFromStringFn,
 
     hbBufferCreateFn: HbBufferCreateFn,
+    hbBufferDestroyFn: HbBufferDestroyFn,
     hbBufferAddUTF8Fn: HbBufferAddUTF8Fn,
     hbBufferGuessSegmentPropertiesFn: HbBufferGuessSegmentPropertiesFn,
     hbBufferGetLengthFn: HbBufferGetLengthFn,
     hbBufferGetGlyphInfosFn: HbBufferGetGlyphInfosFn,
     hbBufferGetGlyphPositionsFn: HbBufferGetGlyphPositionsFn,
+    hbBufferSetDirectionFn: HbBufferSetDirectionFn,
+    hbBufferSetScriptFn: HbBufferSetScriptFn,
+    hbBufferSetLanguageFn: HbBufferSetLanguageFn,
 
     library: freetype.Library,
     face: freetype.Face,
@@ -77,7 +88,6 @@ const FreetypeHarfbuzzImplementation = struct {
 
         impl.initFn = freetype_handle.lookup(Self.InitFn, "FT_Init_FreeType") orelse return error.LookupFailed;
         impl.doneFn = freetype_handle.lookup(Self.DoneFn, "FT_Done_FreeType") orelse return error.LookupFailed;
-        impl.initFn = freetype_handle.lookup(Self.InitFn, "FT_Init_FreeType") orelse return error.LookupFailed;
         impl.newFaceFn = freetype_handle.lookup(Self.NewFaceFn, "FT_New_Face") orelse return error.LookupFailed;
 
         _ = impl.initFn(&impl.library);
@@ -102,11 +112,21 @@ const FreetypeHarfbuzzImplementation = struct {
 
         impl.hbBufferCreateFn = harfbuzz_handle.lookup(Self.HbBufferCreateFn, "hb_buffer_create") orelse
             return error.LookupFailed;
+        impl.hbBufferDestroyFn = harfbuzz_handle.lookup(Self.HbBufferDestroyFn, "hb_buffer_destroy") orelse
+            return error.LookupFailed;
         impl.hbBufferAddUTF8Fn = harfbuzz_handle.lookup(Self.HbBufferAddUTF8Fn, "hb_buffer_add_utf8") orelse
             return error.LookupFailed;
         impl.hbShapeFn = harfbuzz_handle.lookup(Self.HbShapeFn, "hb_shape") orelse
             return error.LookupFailed;
         impl.hbBufferGetLengthFn = harfbuzz_handle.lookup(Self.HbBufferGetLengthFn, "hb_buffer_get_length") orelse
+            return error.LookupFailed;
+        impl.hbBufferSetDirectionFn = harfbuzz_handle.lookup(Self.HbBufferSetDirectionFn, "hb_buffer_set_direction") orelse
+            return error.LookupFailed;
+        impl.hbBufferSetScriptFn = harfbuzz_handle.lookup(Self.HbBufferSetScriptFn, "hb_buffer_set_script") orelse
+            return error.LookupFailed;
+        impl.hbBufferSetLanguageFn = harfbuzz_handle.lookup(Self.HbBufferSetLanguageFn, "hb_buffer_set_language") orelse
+            return error.LookupFailed;
+        impl.hbLanguageFromStringFn = harfbuzz_handle.lookup(Self.HbLanguageFromStringFn, "hb_language_from_string") orelse
             return error.LookupFailed;
 
         impl.hbBufferGetGlyphInfosFn = harfbuzz_handle.lookup(
@@ -252,7 +272,12 @@ pub fn Font(comptime backend: Backend) type {
             ) !void {
                 var impl = self.font;
                 var buffer = impl.hbBufferCreateFn();
+                defer impl.hbBufferDestroyFn(buffer);
                 impl.hbBufferAddUTF8Fn(buffer, codepoints.ptr, @intCast(i32, codepoints.len), 0, -1);
+                impl.hbBufferSetDirectionFn(buffer, .left_to_right);
+                impl.hbBufferSetScriptFn(buffer, .latin);
+                const language = impl.hbLanguageFromStringFn("en", 2);
+                impl.hbBufferSetLanguageFn(buffer, language);
                 impl.hbBufferGuessSegmentPropertiesFn(buffer);
                 impl.hbShapeFn(impl.harfbuzz_font, buffer, null, 0);
                 const buffer_length = impl.hbBufferGetLengthFn(buffer);
@@ -264,27 +289,21 @@ pub fn Font(comptime backend: Backend) type {
                 var i: usize = 0;
                 while (i < buffer_length) : (i += 1) {
                     const codepoint = codepoints[i];
-                    const x_advance: f64 = @intToFloat(f64, position_list[i].x_advance) / 64.0;
-                    const y_offset: f64 = @intToFloat(f64, position_list[i].y_offset) / 64.0;
-                    const y_advance: f64 = @intToFloat(f64, position_list[i].y_advance) / 64.0;
-                    const x_offset: f64 = @intToFloat(f64, position_list[i].x_offset) / 64.0;
-
-                    std.log.info("cp: {c} {d}, {d} -> {d}, {d}", .{
-                        codepoint, x_advance, y_advance, x_offset, y_offset,
-                    });
+                    const x_advance = @intToFloat(f64, position_list[i].x_advance) / 64.0;
+                    const y_advance = @intToFloat(f64, position_list[i].y_advance) / 64.0;
+                    const x_offset = @intToFloat(f32, position_list[i].x_offset) / 64.0;
+                    const y_offset = @intToFloat(f32, position_list[i].y_offset) / 64.0;
 
                     const glyph_index: u32 = impl.getCharIndexFn(impl.face, codepoint);
                     std.debug.assert(glyph_index != 0);
 
-                    const err_code = impl.loadGlyphFn(impl.face, glyph_index, .{});
-                    std.debug.assert(err_code == 0);
+                    if (impl.loadGlyphFn(impl.face, glyph_index, .{}) != 0) {
+                        std.log.warn("Failed to write '{c}'", .{codepoint});
+                        continue;
+                    }
 
                     const glyph = impl.face.glyph;
-                    const glyph_width = @intToFloat(f32, glyph.advance.x) / 64.0;
-                    const leftside_bearing = @intToFloat(f64, glyph.bitmap_left);
                     const descent = (@intToFloat(f64, glyph.metrics.height - glyph.metrics.hori_bearing_y) / 64);
-
-                    cursor.x += leftside_bearing * screen_scale.horizontal;
                     if (codepoint != ' ') {
                         const glyph_texture_extent = self.textureExtentFromCodepoint(codepoint);
                         const texture_extent = geometry.Extent2D(f32){
@@ -294,14 +313,15 @@ pub fn Font(comptime backend: Backend) type {
                             .height = @intToFloat(f32, glyph_texture_extent.height) / texture_width_height,
                         };
                         const screen_extent = geometry.Extent2D(f32){
-                            .x = @floatCast(f32, cursor.x),
-                            .y = @floatCast(f32, cursor.y + (descent * screen_scale.vertical)),
+                            .x = @floatCast(f32, cursor.x + (x_offset * screen_scale.horizontal)),
+                            .y = @floatCast(f32, cursor.y + ((y_offset + descent) * screen_scale.vertical)),
                             .width = @floatCast(f32, @intToFloat(f64, glyph_texture_extent.width) * screen_scale.horizontal),
                             .height = @floatCast(f32, @intToFloat(f64, glyph_texture_extent.height) * screen_scale.vertical),
                         };
                         try writer_interface.write(screen_extent, texture_extent);
                     }
-                    cursor.x += (glyph_width) * screen_scale.horizontal;
+                    cursor.x += x_advance * screen_scale.horizontal;
+                    cursor.y += y_advance * screen_scale.vertical;
                 }
             }
 
