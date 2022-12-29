@@ -40,11 +40,11 @@ const FreetypeHarfbuzzImplementation = struct {
     const HbFaceCreateFn = *const fn (freetype.Face, ?HbDestroyFn) callconv(.C) *harfbuzz.Face;
     const HbBufferCreateFn = *const fn () callconv(.C) *harfbuzz.Buffer;
     const HbBufferGuessSegmentPropertiesFn = *const fn (*harfbuzz.Buffer) callconv(.C) void;
-    const HbShapeFn = *const fn (*harfbuzz.Font, *harfbuzz.Buffer, [*]const harfbuzz.Feature, u32) callconv(.C) void;
-    const HbBufferAddUTF8Fn = *const fn (*harfbuzz.Buffer, [*:0]const u8, i32, u32, i32) callconv(.C) void;
+    const HbShapeFn = *const fn (*harfbuzz.Font, *harfbuzz.Buffer, ?[*]const harfbuzz.Feature, u32) callconv(.C) void;
+    const HbBufferAddUTF8Fn = *const fn (*harfbuzz.Buffer, [*]const u8, i32, u32, i32) callconv(.C) void;
     const HbBufferGetLengthFn = *const fn (*harfbuzz.Buffer) callconv(.C) u32;
-    const HbBufferGetGlyphInfosFn = *const fn (*harfbuzz.Buffer, *u32) callconv(.C) *harfbuzz.GlyphInfo;
-    const HbBufferGetGlyphPositionsFn = *const fn (*harfbuzz.Buffer, *u32) callconv(.C) *harfbuzz.GlyphPosition;
+    const HbBufferGetGlyphInfosFn = *const fn (*harfbuzz.Buffer, ?*u32) callconv(.C) [*]harfbuzz.GlyphInfo;
+    const HbBufferGetGlyphPositionsFn = *const fn (*harfbuzz.Buffer, ?*u32) callconv(.C) [*]harfbuzz.GlyphPosition;
 
     initFn: InitFn,
     doneFn: DoneFn,
@@ -108,9 +108,17 @@ const FreetypeHarfbuzzImplementation = struct {
             return error.LookupFailed;
         impl.hbBufferGetLengthFn = harfbuzz_handle.lookup(Self.HbBufferGetLengthFn, "hb_buffer_get_length") orelse
             return error.LookupFailed;
-        impl.hbBufferGetGlyphInfosFn = harfbuzz_handle.lookup(Self.HbBufferGetGlyphInfosFn, "hb_buffer_get_glyph_infos") orelse
+
+        impl.hbBufferGetGlyphInfosFn = harfbuzz_handle.lookup(
+            Self.HbBufferGetGlyphInfosFn,
+            "hb_buffer_get_glyph_infos",
+        ) orelse
             return error.LookupFailed;
-        impl.hbBufferGetGlyphPositionsFn = harfbuzz_handle.lookup(Self.HbBufferGetGlyphPositionsFn, "hb_buffer_get_glyph_positions") orelse
+
+        impl.hbBufferGetGlyphPositionsFn = harfbuzz_handle.lookup(
+            Self.HbBufferGetGlyphPositionsFn,
+            "hb_buffer_get_glyph_positions",
+        ) orelse
             return error.LookupFailed;
 
         impl.hbBufferGuessSegmentPropertiesFn = harfbuzz_handle.lookup(
@@ -124,33 +132,6 @@ const FreetypeHarfbuzzImplementation = struct {
 
     pub fn deinit(self: *@This(), _: std.mem.Allocator) void {
         _ = self.doneFn(self.library);
-    }
-
-    pub inline fn kernPairAdvance(self: *@This(), left_codepoint: u8, right_codepoint: u8) ?f64 {
-        _ = self;
-        _ = left_codepoint;
-        _ = right_codepoint;
-        return null;
-    }
-
-    pub inline fn glyphMetricsFromCodepoint(self: *@This(), codepoint: u8) ScaledGlyphMetric {
-        var metrics: ScaledGlyphMetric = undefined;
-        // TODO: Implement Harfbuzz to get advance
-        metrics.advance_x = 0.0;
-
-        const glyph_index: u32 = self.getCharIndexFn(self.face, codepoint);
-        std.debug.assert(glyph_index != 0);
-
-        const err_code = self.loadGlyphFn(self.face, glyph_index, .{});
-        std.debug.assert(err_code == 0);
-
-        const glyph = self.face.glyph;
-
-        metrics.leftside_bearing = @intToFloat(f64, glyph.bitmap_left);
-        metrics.descent = (@intToFloat(f64, -glyph.metrics.hori_bearing_y) / 64);
-        metrics.descent += @intToFloat(f64, glyph.metrics.height) / 64;
-
-        return metrics;
     }
 };
 
@@ -269,55 +250,58 @@ pub fn Font(comptime backend: Backend) type {
                 screen_scale: geometry.Scale2D(f64),
                 writer_interface: anytype,
             ) !void {
+                var impl = self.font;
+                var buffer = impl.hbBufferCreateFn();
+                impl.hbBufferAddUTF8Fn(buffer, codepoints.ptr, @intCast(i32, codepoints.len), 0, -1);
+                impl.hbBufferGuessSegmentPropertiesFn(buffer);
+                impl.hbShapeFn(impl.harfbuzz_font, buffer, null, 0);
+                const buffer_length = impl.hbBufferGetLengthFn(buffer);
+                var position_count: u32 = 0;
+                const position_list: [*]harfbuzz.GlyphPosition = impl.hbBufferGetGlyphPositionsFn(buffer, &position_count);
+                std.debug.assert(position_count > 0);
                 var cursor = placement;
                 const texture_width_height: f32 = @intToFloat(f32, self.atlas.size);
                 var i: usize = 0;
-                var right_codepoint_opt: ?u8 = null;
-                while (i < codepoints.len) : (i += 1) {
+                while (i < buffer_length) : (i += 1) {
                     const codepoint = codepoints[i];
-                    if (codepoint == ' ') {
-                        cursor.x += 0.1 * screen_scale.horizontal;
-                        continue;
+                    const x_advance: f64 = @intToFloat(f64, position_list[i].x_advance) / 64.0;
+                    const y_offset: f64 = @intToFloat(f64, position_list[i].y_offset) / 64.0;
+                    const y_advance: f64 = @intToFloat(f64, position_list[i].y_advance) / 64.0;
+                    const x_offset: f64 = @intToFloat(f64, position_list[i].x_offset) / 64.0;
+
+                    std.log.info("cp: {c} {d}, {d} -> {d}, {d}", .{
+                        codepoint, x_advance, y_advance, x_offset, y_offset,
+                    });
+
+                    const glyph_index: u32 = impl.getCharIndexFn(impl.face, codepoint);
+                    std.debug.assert(glyph_index != 0);
+
+                    const err_code = impl.loadGlyphFn(impl.face, glyph_index, .{});
+                    std.debug.assert(err_code == 0);
+
+                    const glyph = impl.face.glyph;
+                    const glyph_width = @intToFloat(f32, glyph.advance.x) / 64.0;
+                    const leftside_bearing = @intToFloat(f64, glyph.bitmap_left);
+                    const descent = (@intToFloat(f64, glyph.metrics.height - glyph.metrics.hori_bearing_y) / 64);
+
+                    cursor.x += leftside_bearing * screen_scale.horizontal;
+                    if (codepoint != ' ') {
+                        const glyph_texture_extent = self.textureExtentFromCodepoint(codepoint);
+                        const texture_extent = geometry.Extent2D(f32){
+                            .x = @intToFloat(f32, glyph_texture_extent.x) / texture_width_height,
+                            .y = @intToFloat(f32, glyph_texture_extent.y) / texture_width_height,
+                            .width = @intToFloat(f32, glyph_texture_extent.width) / texture_width_height,
+                            .height = @intToFloat(f32, glyph_texture_extent.height) / texture_width_height,
+                        };
+                        const screen_extent = geometry.Extent2D(f32){
+                            .x = @floatCast(f32, cursor.x),
+                            .y = @floatCast(f32, cursor.y + (descent * screen_scale.vertical)),
+                            .width = @floatCast(f32, @intToFloat(f64, glyph_texture_extent.width) * screen_scale.horizontal),
+                            .height = @floatCast(f32, @intToFloat(f64, glyph_texture_extent.height) * screen_scale.vertical),
+                        };
+                        try writer_interface.write(screen_extent, texture_extent);
                     }
-
-                    const glyph_metrics = self.font.glyphMetricsFromCodepoint(codepoint);
-
-                    const glyph_texture_extent = self.textureExtentFromCodepoint(codepoint);
-                    const texture_extent = geometry.Extent2D(f32){
-                        .x = @intToFloat(f32, glyph_texture_extent.x) / texture_width_height,
-                        .y = @intToFloat(f32, glyph_texture_extent.y) / texture_width_height,
-                        .width = @intToFloat(f32, glyph_texture_extent.width) / texture_width_height,
-                        .height = @intToFloat(f32, glyph_texture_extent.height) / texture_width_height,
-                    };
-
-                    std.debug.assert(texture_extent.x >= 0.0);
-                    std.debug.assert(texture_extent.x <= 1.0);
-                    std.debug.assert(texture_extent.y >= 0.0);
-                    std.debug.assert(texture_extent.y <= 1.0);
-                    std.debug.assert(texture_extent.width <= 1.0);
-                    std.debug.assert(texture_extent.height <= 1.0);
-
-                    cursor.x += glyph_metrics.leftside_bearing * screen_scale.horizontal;
-                    const screen_extent = geometry.Extent2D(f32){
-                        .x = @floatCast(f32, cursor.x),
-                        .y = @floatCast(f32, cursor.y + (@floatCast(f32, glyph_metrics.descent) * screen_scale.vertical)),
-                        .width = @floatCast(f32, @intToFloat(f64, glyph_texture_extent.width) * screen_scale.horizontal),
-                        .height = @floatCast(f32, @intToFloat(f64, glyph_texture_extent.height) * screen_scale.vertical),
-                    };
-                    try writer_interface.write(screen_extent, texture_extent);
-                    const advance_x: f64 = blk: {
-                        if (right_codepoint_opt) |right_codepoint| {
-                            break :blk self.font.kernPairAdvance(codepoint, right_codepoint) orelse glyph_metrics.advance_x;
-                        }
-                        break :blk glyph_metrics.advance_x;
-                    };
-
-                    cursor.x += @floatCast(f32, advance_x * screen_scale.horizontal);
-
-                    std.debug.assert(cursor.x >= -1.0);
-                    std.debug.assert(cursor.x <= 1.0);
-                    std.debug.assert(cursor.y <= 1.0);
-                    std.debug.assert(cursor.y >= -1.0);
+                    cursor.x += (glyph_width) * screen_scale.horizontal;
                 }
             }
 
@@ -338,9 +322,7 @@ pub fn Font(comptime backend: Backend) type {
                         cursor.x += 0.1 * screen_scale.horizontal;
                         continue;
                     }
-
                     const glyph_metrics = self.font.glyphMetricsFromCodepoint(codepoint);
-
                     const glyph_texture_extent = self.textureExtentFromCodepoint(codepoint);
                     const texture_extent = geometry.Extent2D(f32){
                         .x = @intToFloat(f32, glyph_texture_extent.x) / texture_width_height,
