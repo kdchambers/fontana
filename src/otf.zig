@@ -2,10 +2,13 @@
 // Copyright (c) 2022 Keith Chambers
 
 const std = @import("std");
+const builtin = @import("builtin");
 const toNative = std.mem.toNative;
 const bigToNative = std.mem.bigToNative;
 const eql = std.mem.eql;
 const assert = std.debug.assert;
+
+const is_debug = if (builtin.mode == .Debug) true else false;
 
 const geometry = @import("geometry.zig");
 const graphics = @import("graphics.zig");
@@ -949,6 +952,9 @@ pub fn parseFromBytes(font_data: []u8) !FontInfo {
         _ = entry_selector;
         _ = range_shift;
 
+        if (is_debug) {
+            std.debug.print("TTF / OTF Tables:\n", .{});
+        }
         var i: usize = 0;
         while (i < tables_count) : (i += 1) {
             var tag_buffer: [4]u8 = undefined;
@@ -959,6 +965,10 @@ pub fn parseFromBytes(font_data: []u8) !FontInfo {
             _ = checksum;
             const offset = try reader.readIntBig(u32);
             const length = try reader.readIntBig(u32);
+
+            if (is_debug) {
+                std.debug.print("  {s}\n", .{tag});
+            }
 
             if (std.mem.eql(u8, "cmap", tag)) {
                 data_sections.cmap.set(offset, length);
@@ -1032,14 +1042,11 @@ pub fn parseFromBytes(font_data: []u8) !FontInfo {
         return error.RequiredSectionHeadMissing;
     }
 
-    if (data_sections.loca.isNull()) {
-        std.log.err("Required data section `loca` not found", .{});
-        return error.RequiredSectionHeadMissing;
-    }
-
-    if (data_sections.glyf.isNull()) {
-        std.log.err("Required data section `glyf` not found", .{});
-        return error.RequiredSectionHeadMissing;
+    if (!data_sections.glyf.isNull()) {
+        if (data_sections.loca.isNull()) {
+            std.log.err("Required data section `loca` not found", .{});
+            return error.RequiredSectionHeadMissing;
+        }
     }
 
     if (data_sections.hmtx.isNull()) {
