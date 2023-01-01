@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2022 Keith Chambers
+
 const std = @import("std");
 const DynLib = std.DynLib;
 
@@ -332,6 +333,7 @@ pub fn Font(comptime backend: Backend) type {
                 screen_scale: geometry.Scale2D(f64),
                 writer_interface: anytype,
             ) !void {
+                var impl = self.font;
                 var cursor = placement;
                 const texture_width_height: f32 = @intToFloat(f32, self.atlas.size);
                 var i: usize = 0;
@@ -339,7 +341,7 @@ pub fn Font(comptime backend: Backend) type {
                 while (i < codepoints.len) : (i += 1) {
                     const codepoint = codepoints[i];
                     if (codepoint == ' ') {
-                        cursor.x += 0.1 * screen_scale.horizontal;
+                        cursor.x += impl.font.space_advance * impl.font_scale * screen_scale.horizontal;
                         continue;
                     }
                     const glyph_metrics = self.font.glyphMetricsFromCodepoint(codepoint);
@@ -351,14 +353,6 @@ pub fn Font(comptime backend: Backend) type {
                         .height = @intToFloat(f32, glyph_texture_extent.height) / texture_width_height,
                     };
 
-                    std.debug.assert(texture_extent.x >= 0.0);
-                    std.debug.assert(texture_extent.x <= 1.0);
-                    std.debug.assert(texture_extent.y >= 0.0);
-                    std.debug.assert(texture_extent.y <= 1.0);
-                    std.debug.assert(texture_extent.width <= 1.0);
-                    std.debug.assert(texture_extent.height <= 1.0);
-
-                    cursor.x += glyph_metrics.leftside_bearing * screen_scale.horizontal;
                     const screen_extent = geometry.Extent2D(f32){
                         .x = @floatCast(f32, cursor.x),
                         .y = @floatCast(f32, cursor.y + (@floatCast(f32, glyph_metrics.descent) * screen_scale.vertical)),
@@ -372,13 +366,7 @@ pub fn Font(comptime backend: Backend) type {
                         }
                         break :blk glyph_metrics.advance_x;
                     };
-
                     cursor.x += @floatCast(f32, advance_x * screen_scale.horizontal);
-
-                    std.debug.assert(cursor.x >= -1.0);
-                    std.debug.assert(cursor.x <= 1.0);
-                    std.debug.assert(cursor.y <= 1.0);
-                    std.debug.assert(cursor.y >= -1.0);
                 }
             }
         };
