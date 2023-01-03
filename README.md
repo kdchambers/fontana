@@ -119,6 +119,20 @@ pub fn write(
 
 All this does is map texture values to locations on the output display, defined in the coordinate system of the underlying graphics API.
 
+## Integration
+
+Just add `src/fontana.zig` as a new package in your build.zig.
+
+```rust
+const fontana_path = "your_project/deps/fontana";
+exe.addPackage(.{
+    .name = "fontana",
+    .source = .{ .path = fontana_path ++ "/src/fontana.zig" },
+});
+```
+
+Fontana is kept in sync with the latest zig release. It was last tested with version **0.11.0-dev.1023**.
+
 ## Example
 
 A running example can be found in the example repository [fontana-examples](https://github.com/kdchambers/fontana-examples). 

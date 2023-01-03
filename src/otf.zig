@@ -118,7 +118,7 @@ pub const TableDirectory = struct {
 
         var bytes = @ptrCast(*const u32, &self);
         while (iteractions_count > 0) : (iteractions_count -= 1) {
-            _ = @addWithOverflow(u32, sum, bytes.*, &sum);
+            sum = @addWithOverflow(sum, bytes.*).a;
             bytes = @intToPtr(*const u32, @ptrToInt(bytes) + @sizeOf(u32));
         }
         const checksum = self.checksum;
