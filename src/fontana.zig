@@ -216,13 +216,12 @@ pub fn Font(comptime backend: Backend) type {
     return struct {
         pub const Pen = struct {
             font: *BackendImplementation,
-            atlas: Atlas,
+            atlas: *Atlas,
             codepoints: []const u8,
             atlas_entries: []geometry.Extent2D(u32),
             atlas_entries_count: u32,
 
             pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
-                self.atlas.deinit(allocator);
                 allocator.free(self.atlas_entries);
                 self.font = undefined;
                 self.atlas_entries_count = 0;
@@ -398,12 +397,13 @@ pub fn Font(comptime backend: Backend) type {
             codepoints: []const u8,
             texture_size: u32,
             texture_pixels: [*]PixelType,
+            atlas_ref: *Atlas,
         ) !Pen {
             const font: *otf.FontInfo = &self.internal.font;
             self.internal.font_scale = otf.fUnitToPixelScale(size_point, points_per_pixel, font.units_per_em);
             var pen: Pen = undefined;
             pen.font = &self.internal;
-            pen.atlas = try Atlas.init(allocator, texture_size);
+            pen.atlas = atlas_ref;
             pen.atlas_entries = try allocator.alloc(geometry.Extent2D(u32), 64);
             pen.codepoints = codepoints;
             const funit_to_pixel = otf.fUnitToPixelScale(size_point, points_per_pixel, font.units_per_em);
@@ -433,6 +433,7 @@ pub fn Font(comptime backend: Backend) type {
             codepoints: []const u8,
             texture_size: u32,
             texture_pixels: [*]PixelType,
+            atlas_ref: *Atlas,
         ) !Pen {
             const face = self.internal.face;
             _ = self.internal.setCharSizeFn(
@@ -444,7 +445,7 @@ pub fn Font(comptime backend: Backend) type {
             );
             var pen: Pen = undefined;
             pen.font = &self.internal;
-            pen.atlas = try Atlas.init(allocator, texture_size);
+            pen.atlas = atlas_ref;
             pen.atlas_entries = try allocator.alloc(geometry.Extent2D(u32), 64);
             pen.codepoints = codepoints;
             for (codepoints) |codepoint, codepoint_i| {
@@ -495,6 +496,7 @@ pub fn Font(comptime backend: Backend) type {
             codepoints: []const u8,
             texture_size: u32,
             texture_pixels: [*]PixelType,
+            atlas_ref: *Atlas,
         ) !Pen {
             // TODO: Convert point to pixel, etc
             return switch (backend) {
@@ -506,6 +508,7 @@ pub fn Font(comptime backend: Backend) type {
                     codepoints,
                     texture_size,
                     texture_pixels,
+                    atlas_ref,
                 ),
                 .freetype_harfbuzz => self.createPenFreetypeHarfbuzz(
                     PixelType,
@@ -515,6 +518,7 @@ pub fn Font(comptime backend: Backend) type {
                     codepoints,
                     texture_size,
                     texture_pixels,
+                    atlas_ref,
                 ),
                 else => unreachable,
             };
