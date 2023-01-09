@@ -248,8 +248,8 @@ pub fn Font(comptime backend: Backend, comptime types: Types) type {
             pub fn write(
                 self: *@This(),
                 codepoints: []const u8,
-                placement: types.Coordinates2D(f64),
-                screen_scale: types.Scale2D(f64),
+                placement: types.Coordinates2DNative,
+                screen_scale: types.Scale2D,
                 writer_interface: anytype,
             ) !void {
                 switch (comptime backend) {
