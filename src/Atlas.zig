@@ -26,10 +26,6 @@ pub const Error = error{
     AtlasFull,
 };
 
-/// A region within the texture atlas. These can be acquired using the
-/// "reserve" function. A region reservation is required to write data.
-pub const Region = geometry.Extent2D(u32);
-
 pub fn init(alloc: Allocator, size: u32) !Atlas {
     var result = Atlas{
         .size = size,
@@ -54,9 +50,9 @@ pub fn deinit(self: *Atlas, alloc: Allocator) void {
 ///
 /// May allocate to add a new rectangle into the internal list of rectangles.
 /// This will not automatically enlarge the texture if it is full.
-pub fn reserve(self: *Atlas, alloc: Allocator, width: u32, height: u32) !Region {
+pub fn reserve(self: *Atlas, comptime Extent2DPixel: type, alloc: Allocator, width: u32, height: u32) !Extent2DPixel {
     // x, y are populated within :best_idx below
-    var region: Region = .{ .x = 0, .y = 0, .width = width, .height = height };
+    var region: Extent2DPixel = .{ .x = 0, .y = 0, .width = width, .height = height };
 
     // If our width/height are 0, then we return the region as-is. This
     // may seem like an error case but it simplifies downstream callers who

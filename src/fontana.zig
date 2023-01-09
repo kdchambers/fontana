@@ -10,7 +10,6 @@ const graphics = @import("graphics.zig");
 const freetype = @import("freetype.zig");
 const harfbuzz = @import("harfbuzz.zig");
 
-pub const geometry = @import("geometry.zig");
 pub const Atlas = @import("Atlas.zig");
 
 pub const ScaledGlyphMetric = struct {
@@ -212,13 +211,20 @@ pub const Size = union(SizeTag) {
     pixel: f64,
 };
 
-pub fn Font(comptime backend: Backend) type {
+pub const Types = struct {
+    Extent2DPixel: type,
+    Extent2DNative: type,
+    Coordinates2DNative: type,
+    Scale2D: type,
+};
+
+pub fn Font(comptime backend: Backend, comptime types: Types) type {
     return struct {
         pub const Pen = struct {
             font: *BackendImplementation,
             atlas: *Atlas,
             codepoints: []const u8,
-            atlas_entries: []geometry.Extent2D(u32),
+            atlas_entries: []types.Extent2DPixel,
             atlas_entries_count: u32,
 
             pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
@@ -227,7 +233,7 @@ pub fn Font(comptime backend: Backend) type {
                 self.atlas_entries_count = 0;
             }
 
-            inline fn textureExtentFromCodepoint(self: *@This(), codepoint: u8) geometry.Extent2D(u32) {
+            inline fn textureExtentFromCodepoint(self: *@This(), codepoint: u8) types.Extent2DPixel {
                 const atlas_index = blk: {
                     var i: usize = 0;
                     while (i < self.atlas_entries_count) : (i += 1) {
@@ -242,8 +248,8 @@ pub fn Font(comptime backend: Backend) type {
             pub fn write(
                 self: *@This(),
                 codepoints: []const u8,
-                placement: geometry.Coordinates2D(f64),
-                screen_scale: geometry.Scale2D(f64),
+                placement: types.Coordinates2D(f64),
+                screen_scale: types.Scale2D(f64),
                 writer_interface: anytype,
             ) !void {
                 switch (comptime backend) {
@@ -263,11 +269,143 @@ pub fn Font(comptime backend: Backend) type {
                 }
             }
 
+            pub fn writeCentered(
+                self: *@This(),
+                codepoints: []const u8,
+                placement_extent: types.Extent2DNative,
+                screen_scale: types.Scale2D,
+                writer_interface: anytype,
+            ) !void {
+                switch (comptime backend) {
+                    .freetype_harfbuzz => return self.writeCenteredFreetypeHarfbuzz(
+                        codepoints,
+                        placement_extent,
+                        screen_scale,
+                        writer_interface,
+                    ),
+                    .fontana => return self.writeCenteredFontana(
+                        codepoints,
+                        placement_extent,
+                        screen_scale,
+                        writer_interface,
+                    ),
+                    else => unreachable,
+                }
+            }
+
+            pub fn writeCenteredFreetypeHarfbuzz(
+                self: *@This(),
+                codepoints: []const u8,
+                placement_extent: types.Extent2DNative,
+                screen_scale: types.Scale2D,
+                writer_interface: anytype,
+            ) !void {
+                var impl = self.font;
+                var buffer = impl.hbBufferCreateFn();
+                defer impl.hbBufferDestroyFn(buffer);
+
+                impl.hbBufferAddUTF8Fn(buffer, codepoints.ptr, @intCast(i32, codepoints.len), 0, -1);
+                impl.hbBufferSetDirectionFn(buffer, .left_to_right);
+                impl.hbBufferSetScriptFn(buffer, .latin);
+                const language = impl.hbLanguageFromStringFn("en", 2);
+                impl.hbBufferSetLanguageFn(buffer, language);
+                impl.hbBufferGuessSegmentPropertiesFn(buffer);
+
+                impl.hbShapeFn(impl.harfbuzz_font, buffer, null, 0);
+                const buffer_length = impl.hbBufferGetLengthFn(buffer);
+
+                var position_count: u32 = 0;
+                const position_list: [*]harfbuzz.GlyphPosition = impl.hbBufferGetGlyphPositionsFn(buffer, &position_count);
+                std.debug.assert(position_count > 0);
+
+                var max_descent: f64 = 0;
+                var max_height: f64 = 0;
+
+                var rendered_text_width: f64 = 0;
+                var i: usize = 0;
+                while (i < buffer_length) : (i += 1) {
+                    rendered_text_width += (@intToFloat(f64, position_list[i].x_advance) / 64.0) * screen_scale.horizontal;
+
+                    const codepoint = codepoints[i];
+                    const glyph_index: u32 = impl.getCharIndexFn(impl.face, codepoint);
+                    std.debug.assert(glyph_index != 0);
+
+                    if (impl.loadGlyphFn(impl.face, glyph_index, .{}) != 0) {
+                        std.log.warn("Failed to load '{c}'", .{codepoint});
+                        continue;
+                    }
+
+                    const glyph = impl.face.glyph;
+                    const height_above_baseline = @intToFloat(f64, glyph.metrics.hori_bearing_y) / 64;
+                    const total_height = @intToFloat(f64, glyph.metrics.height) / 64;
+                    const descent = total_height - height_above_baseline;
+
+                    max_descent = @max(max_descent, descent);
+                    max_height = @max(max_height, height_above_baseline);
+                }
+
+                const line_height = (max_descent + max_height) * screen_scale.vertical;
+
+                if (line_height > placement_extent.height)
+                    return error.TextTooTall;
+
+                const margin_vertical = -((placement_extent.height - line_height) / 2.0);
+
+                if (rendered_text_width > placement_extent.width)
+                    return error.TextTooWide;
+
+                const margin_horizontal = (placement_extent.width - rendered_text_width) / 2.0;
+
+                var cursor = types.Coordinates2DNative{
+                    .x = placement_extent.x,
+                    .y = placement_extent.y,
+                };
+                const texture_width_height: f32 = @intToFloat(f32, self.atlas.size);
+
+                i = 0;
+                while (i < buffer_length) : (i += 1) {
+                    const x_advance = @intToFloat(f64, position_list[i].x_advance) / 64.0;
+                    const y_advance = @intToFloat(f64, position_list[i].y_advance) / 64.0;
+                    const x_offset = @intToFloat(f32, position_list[i].x_offset) / 64.0;
+                    const y_offset = @intToFloat(f32, position_list[i].y_offset) / 64.0;
+
+                    const codepoint = codepoints[i];
+                    const glyph_index: u32 = impl.getCharIndexFn(impl.face, codepoint);
+                    std.debug.assert(glyph_index != 0);
+
+                    if (impl.loadGlyphFn(impl.face, glyph_index, .{}) != 0) {
+                        std.log.warn("Failed to write '{c}'", .{codepoint});
+                        continue;
+                    }
+
+                    const glyph = impl.face.glyph;
+                    const descent = (@intToFloat(f64, glyph.metrics.height - glyph.metrics.hori_bearing_y) / 64);
+                    if (codepoint != ' ') {
+                        const glyph_texture_extent = self.textureExtentFromCodepoint(codepoint);
+                        const texture_extent = types.Extent2DNative{
+                            .x = @intToFloat(f32, glyph_texture_extent.x) / texture_width_height,
+                            .y = @intToFloat(f32, glyph_texture_extent.y) / texture_width_height,
+                            .width = @intToFloat(f32, glyph_texture_extent.width) / texture_width_height,
+                            .height = @intToFloat(f32, glyph_texture_extent.height) / texture_width_height,
+                        };
+                        const screen_extent = types.Extent2DNative{
+                            .x = @floatCast(f32, margin_horizontal + cursor.x + (x_offset * screen_scale.horizontal)),
+                            .y = @floatCast(f32, margin_vertical + cursor.y + ((y_offset + descent) * screen_scale.vertical)),
+                            .width = @floatCast(f32, @intToFloat(f64, glyph_texture_extent.width) * screen_scale.horizontal),
+                            .height = @floatCast(f32, @intToFloat(f64, glyph_texture_extent.height) * screen_scale.vertical),
+                        };
+                        try writer_interface.write(screen_extent, texture_extent);
+                    }
+                    cursor.x += @floatCast(f32, x_advance * screen_scale.horizontal);
+                    cursor.y += @floatCast(f32, y_advance * screen_scale.vertical);
+                }
+            }
+
             inline fn writeFreetypeHarfbuzz(
                 self: *@This(),
                 codepoints: []const u8,
-                placement: geometry.Coordinates2D(f64),
-                screen_scale: geometry.Scale2D(f64),
+                placement: types.Coordinates2DNative,
+                screen_scale: types.Scale2D,
                 writer_interface: anytype,
             ) !void {
                 var impl = self.font;
@@ -306,13 +444,13 @@ pub fn Font(comptime backend: Backend) type {
                     const descent = (@intToFloat(f64, glyph.metrics.height - glyph.metrics.hori_bearing_y) / 64);
                     if (codepoint != ' ') {
                         const glyph_texture_extent = self.textureExtentFromCodepoint(codepoint);
-                        const texture_extent = geometry.Extent2D(f32){
+                        const texture_extent = types.Extent2DNative{
                             .x = @intToFloat(f32, glyph_texture_extent.x) / texture_width_height,
                             .y = @intToFloat(f32, glyph_texture_extent.y) / texture_width_height,
                             .width = @intToFloat(f32, glyph_texture_extent.width) / texture_width_height,
                             .height = @intToFloat(f32, glyph_texture_extent.height) / texture_width_height,
                         };
-                        const screen_extent = geometry.Extent2D(f32){
+                        const screen_extent = types.Extent2DNative{
                             .x = @floatCast(f32, cursor.x + (x_offset * screen_scale.horizontal)),
                             .y = @floatCast(f32, cursor.y + ((y_offset + descent) * screen_scale.vertical)),
                             .width = @floatCast(f32, @intToFloat(f64, glyph_texture_extent.width) * screen_scale.horizontal),
@@ -328,8 +466,8 @@ pub fn Font(comptime backend: Backend) type {
             inline fn writeFontana(
                 self: *@This(),
                 codepoints: []const u8,
-                placement: geometry.Coordinates2D(f64),
-                screen_scale: geometry.Scale2D(f64),
+                placement: types.Coordinates2DNative,
+                screen_scale: types.Scale2D,
                 writer_interface: anytype,
             ) !void {
                 var impl = self.font;
@@ -345,14 +483,14 @@ pub fn Font(comptime backend: Backend) type {
                     }
                     const glyph_metrics = self.font.glyphMetricsFromCodepoint(codepoint);
                     const glyph_texture_extent = self.textureExtentFromCodepoint(codepoint);
-                    const texture_extent = geometry.Extent2D(f32){
+                    const texture_extent = types.Extent2DNative{
                         .x = @intToFloat(f32, glyph_texture_extent.x) / texture_width_height,
                         .y = @intToFloat(f32, glyph_texture_extent.y) / texture_width_height,
                         .width = @intToFloat(f32, glyph_texture_extent.width) / texture_width_height,
                         .height = @intToFloat(f32, glyph_texture_extent.height) / texture_width_height,
                     };
 
-                    const screen_extent = geometry.Extent2D(f32){
+                    const screen_extent = types.Extent2DNative{
                         .x = @floatCast(f32, cursor.x),
                         .y = @floatCast(f32, cursor.y + (@floatCast(f32, glyph_metrics.descent) * screen_scale.vertical)),
                         .width = @floatCast(f32, @intToFloat(f64, glyph_texture_extent.width) * screen_scale.horizontal),
@@ -404,17 +542,18 @@ pub fn Font(comptime backend: Backend) type {
             var pen: Pen = undefined;
             pen.font = &self.internal;
             pen.atlas = atlas_ref;
-            pen.atlas_entries = try allocator.alloc(geometry.Extent2D(u32), 64);
+            pen.atlas_entries = try allocator.alloc(types.Extent2DPixel, 64);
             pen.codepoints = codepoints;
             const funit_to_pixel = otf.fUnitToPixelScale(size_point, points_per_pixel, font.units_per_em);
             for (codepoints) |codepoint, codepoint_i| {
                 const required_dimensions = try otf.getRequiredDimensions(font, codepoint, funit_to_pixel);
                 pen.atlas_entries[codepoint_i] = try pen.atlas.reserve(
+                    types.Extent2DPixel,
                     allocator,
                     required_dimensions.width,
                     required_dimensions.height,
                 );
-                var pixel_writer = rasterizer.SubTexturePixelWriter(PixelType){
+                var pixel_writer = rasterizer.SubTexturePixelWriter(PixelType, types.Extent2DPixel){
                     .texture_width = texture_size,
                     .pixels = texture_pixels,
                     .write_extent = pen.atlas_entries[codepoint_i],
@@ -446,7 +585,7 @@ pub fn Font(comptime backend: Backend) type {
             var pen: Pen = undefined;
             pen.font = &self.internal;
             pen.atlas = atlas_ref;
-            pen.atlas_entries = try allocator.alloc(geometry.Extent2D(u32), 64);
+            pen.atlas_entries = try allocator.alloc(types.Extent2DPixel, 128);
             pen.codepoints = codepoints;
             for (codepoints) |codepoint, codepoint_i| {
                 const err_code = self.internal.loadCharFn(face, @intCast(u32, codepoint), .{ .render = true });
@@ -455,6 +594,7 @@ pub fn Font(comptime backend: Backend) type {
                 const bitmap_height = bitmap.rows;
                 const bitmap_width = bitmap.width;
                 pen.atlas_entries[codepoint_i] = try pen.atlas.reserve(
+                    types.Extent2DPixel,
                     allocator,
                     bitmap_width,
                     bitmap_height,

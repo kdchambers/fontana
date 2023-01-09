@@ -287,10 +287,10 @@ pub const OutlineSegment = struct {
     }
 };
 
-pub fn SubTexturePixelWriter(comptime PixelType: type) type {
+pub fn SubTexturePixelWriter(comptime PixelType: type, comptime Extent2DPixel: type) type {
     return struct {
         texture_width: u32,
-        write_extent: geometry.Extent2D(u32),
+        write_extent: Extent2DPixel,
         pixels: [*]PixelType,
 
         pub inline fn add(self: @This(), coords: geometry.Coordinates2D(usize), coverage: f64) void {
