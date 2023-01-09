@@ -458,8 +458,8 @@ pub fn Font(comptime backend: Backend, comptime types: Types) type {
                         };
                         try writer_interface.write(screen_extent, texture_extent);
                     }
-                    cursor.x += x_advance * screen_scale.horizontal;
-                    cursor.y += y_advance * screen_scale.vertical;
+                    cursor.x += @floatCast(f32, x_advance * screen_scale.horizontal);
+                    cursor.y += @floatCast(f32, y_advance * screen_scale.vertical);
                 }
             }
 
