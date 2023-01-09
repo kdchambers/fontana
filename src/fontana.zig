@@ -547,12 +547,17 @@ pub fn Font(comptime backend: Backend, comptime types: Types) type {
             const funit_to_pixel = otf.fUnitToPixelScale(size_point, points_per_pixel, font.units_per_em);
             for (codepoints) |codepoint, codepoint_i| {
                 const required_dimensions = try otf.getRequiredDimensions(font, codepoint, funit_to_pixel);
+                // TODO: Implement spacing in Atlas
                 pen.atlas_entries[codepoint_i] = try pen.atlas.reserve(
                     types.Extent2DPixel,
                     allocator,
-                    required_dimensions.width,
-                    required_dimensions.height,
+                    required_dimensions.width + 2,
+                    required_dimensions.height + 2,
                 );
+                pen.atlas_entries[codepoint_i].x += 1;
+                pen.atlas_entries[codepoint_i].y += 1;
+                pen.atlas_entries[codepoint_i].width -= 2;
+                pen.atlas_entries[codepoint_i].height -= 2;
                 var pixel_writer = rasterizer.SubTexturePixelWriter(PixelType, types.Extent2DPixel){
                     .texture_width = texture_size,
                     .pixels = texture_pixels,
@@ -593,12 +598,17 @@ pub fn Font(comptime backend: Backend, comptime types: Types) type {
                 const bitmap = face.glyph.bitmap;
                 const bitmap_height = bitmap.rows;
                 const bitmap_width = bitmap.width;
+                // TODO: Implement spacing in Atlas
                 pen.atlas_entries[codepoint_i] = try pen.atlas.reserve(
                     types.Extent2DPixel,
                     allocator,
-                    bitmap_width,
-                    bitmap_height,
+                    bitmap_width + 2,
+                    bitmap_height + 2,
                 );
+                pen.atlas_entries[codepoint_i].x += 1;
+                pen.atlas_entries[codepoint_i].y += 1;
+                pen.atlas_entries[codepoint_i].width -= 2;
+                pen.atlas_entries[codepoint_i].height -= 2;
                 const placement = pen.atlas_entries[codepoint_i];
                 const bitmap_pixels: [*]const u8 = bitmap.buffer;
                 var y: usize = 0;

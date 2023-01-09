@@ -6,7 +6,6 @@ const std = @import("std");
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 const testing = std.testing;
-const geometry = @import("geometry.zig");
 
 /// Width and height of the atlas texture. The current implementation is
 /// always square so this is both the width and the height.
