@@ -16,6 +16,7 @@ pub const ScaledGlyphMetric = struct {
     advance_x: f64,
     leftside_bearing: f64,
     descent: f64,
+    height: f64,
 };
 
 const FreetypeHarfbuzzImplementation = struct {
@@ -180,6 +181,8 @@ const FontanaImplementation = struct {
         const glyph_index = otf.findGlyphIndex(font, codepoint);
         var metrics: ScaledGlyphMetric = undefined;
         const bounding_box = otf.calculateGlyphBoundingBox(font, glyph_index) catch unreachable;
+        metrics.height = @intToFloat(f64, bounding_box.y1 - bounding_box.y0) * self.font_scale;
+        std.debug.assert(metrics.height >= 0);
         metrics.leftside_bearing = @intToFloat(f64, otf.leftBearingForGlyph(font, glyph_index)) * self.font_scale;
         metrics.advance_x = @intToFloat(f64, otf.advanceXForGlyph(font, glyph_index)) * self.font_scale;
         metrics.descent = -@intToFloat(f64, bounding_box.y0) * self.font_scale;
@@ -290,6 +293,98 @@ pub fn Font(comptime backend: Backend, comptime types: Types) type {
                         writer_interface,
                     ),
                     else => unreachable,
+                }
+            }
+
+            pub fn writeCenteredFontana(
+                self: *@This(),
+                codepoints: []const u8,
+                placement_extent: types.Extent2DNative,
+                screen_scale: types.Scale2D,
+                writer_interface: anytype,
+            ) !void {
+                var impl = self.font;
+                const texture_width_height: f32 = @intToFloat(f32, self.atlas.size);
+                var i: usize = 0;
+                var right_codepoint_opt: ?u8 = null;
+                var descent_max: f64 = 0;
+                var ascender_max: f64 = 0;
+                var total_width: f64 = 0;
+                while (i < codepoints.len) : (i += 1) {
+                    const codepoint = codepoints[i];
+                    if (codepoint == ' ') {
+                        total_width += impl.font.space_advance * impl.font_scale;
+                        continue;
+                    }
+                    const glyph_metrics = self.font.glyphMetricsFromCodepoint(codepoint);
+                    descent_max = @max(descent_max, glyph_metrics.descent);
+                    ascender_max = @max(ascender_max, glyph_metrics.height - glyph_metrics.descent);
+                    const advance_x: f64 = blk: {
+                        if (right_codepoint_opt) |right_codepoint| {
+                            break :blk self.font.kernPairAdvance(codepoint, right_codepoint) orelse glyph_metrics.advance_x;
+                        }
+                        break :blk glyph_metrics.advance_x;
+                    };
+                    total_width += advance_x;
+                }
+                //
+                // On the last codepoint, we want to calculate the width of the glyph, NOT
+                // the x_advance (Which includes the spacing to the next codepoint)
+                //
+                const width_overshoot = blk: {
+                    const last_codepoint = codepoints[codepoints.len - 1];
+                    const glyph_width_pixels = @intToFloat(f32, self.textureExtentFromCodepoint(last_codepoint).width);
+                    const advance_x = self.font.glyphMetricsFromCodepoint(last_codepoint).advance_x;
+                    std.debug.assert(advance_x >= glyph_width_pixels);
+                    break :blk advance_x - glyph_width_pixels;
+                };
+                total_width -= width_overshoot;
+
+                const total_height = (descent_max + ascender_max) * screen_scale.vertical;
+                if (total_height > placement_extent.height)
+                    return error.InsufficientVerticalSpace;
+
+                total_width *= screen_scale.horizontal;
+                if (total_width > placement_extent.width)
+                    return error.InsufficientHorizontalSpace;
+
+                const vertical_margin: f64 = (placement_extent.height - total_height) / 2.0;
+                const horizontal_margin = (placement_extent.width - total_width) / 2.0;
+                var cursor = types.Coordinates2DNative{
+                    .x = placement_extent.x + @floatCast(f32, horizontal_margin),
+                    .y = @floatCast(f32, placement_extent.y - (vertical_margin + (descent_max * screen_scale.vertical))),
+                };
+
+                i = 0;
+                while (i < codepoints.len) : (i += 1) {
+                    const codepoint = codepoints[i];
+                    if (codepoint == ' ') {
+                        cursor.x += @floatCast(f32, impl.font.space_advance * impl.font_scale * screen_scale.horizontal);
+                        continue;
+                    }
+                    const glyph_metrics = self.font.glyphMetricsFromCodepoint(codepoint);
+                    const glyph_texture_extent = self.textureExtentFromCodepoint(codepoint);
+                    const texture_extent = types.Extent2DNative{
+                        .x = @intToFloat(f32, glyph_texture_extent.x) / texture_width_height,
+                        .y = @intToFloat(f32, glyph_texture_extent.y) / texture_width_height,
+                        .width = @intToFloat(f32, glyph_texture_extent.width) / texture_width_height,
+                        .height = @intToFloat(f32, glyph_texture_extent.height) / texture_width_height,
+                    };
+
+                    const screen_extent = types.Extent2DNative{
+                        .x = @floatCast(f32, cursor.x),
+                        .y = @floatCast(f32, cursor.y + (@floatCast(f32, glyph_metrics.descent) * screen_scale.vertical)),
+                        .width = @floatCast(f32, @intToFloat(f64, glyph_texture_extent.width) * screen_scale.horizontal),
+                        .height = @floatCast(f32, @intToFloat(f64, glyph_texture_extent.height) * screen_scale.vertical),
+                    };
+                    try writer_interface.write(screen_extent, texture_extent);
+                    const advance_x: f64 = blk: {
+                        if (right_codepoint_opt) |right_codepoint| {
+                            break :blk self.font.kernPairAdvance(codepoint, right_codepoint) orelse glyph_metrics.advance_x;
+                        }
+                        break :blk glyph_metrics.advance_x;
+                    };
+                    cursor.x += @floatCast(f32, advance_x * screen_scale.horizontal);
                 }
             }
 
