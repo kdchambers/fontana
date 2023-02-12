@@ -573,7 +573,7 @@ pub fn Font(comptime backend: Backend, comptime types: Types) type {
                 while (i < codepoints.len) : (i += 1) {
                     const codepoint = codepoints[i];
                     if (codepoint == ' ') {
-                        cursor.x += impl.font.space_advance * impl.font_scale * screen_scale.horizontal;
+                        cursor.x += @floatCast(f32, impl.font.space_advance * impl.font_scale * screen_scale.horizontal);
                         continue;
                     }
                     const glyph_metrics = self.font.glyphMetricsFromCodepoint(codepoint);
