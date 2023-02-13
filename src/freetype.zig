@@ -53,6 +53,73 @@ pub const LoadFlags = packed struct(i32) {
     reserved_bit_31: bool = false,
 };
 
+pub const FaceFlags = packed struct(i64) {
+    scalable: bool = false,
+    fixed_sizes: bool = false,
+    fixed_width: bool = false,
+    sfnt: bool = false,
+    horizontal: bool = false,
+    vertical: bool = false,
+    kerning: bool = false,
+    fast_glyphs: bool = false,
+    multiple_masters: bool = false,
+    glyph_names: bool = false,
+    external_stream: bool = false,
+    hinter: bool = false,
+    cid_keyed: bool = false,
+    tricky: bool = false,
+    color: bool = false,
+    variation: bool = false,
+    svg: bool = false,
+    sbix: bool = false,
+    sbix_overlay: bool = false,
+    reserved: u45 = 0,
+};
+
+comptime {
+    const std = @import("std");
+    // https://freetype.org/freetype2/docs/reference/ft2-base_interface.html#ft_face_flag_kerning
+    // #define FT_FACE_FLAG_SCALABLE          ( 1L <<  0 )
+    // #define FT_FACE_FLAG_FIXED_SIZES       ( 1L <<  1 )
+    // #define FT_FACE_FLAG_FIXED_WIDTH       ( 1L <<  2 )
+    // #define FT_FACE_FLAG_SFNT              ( 1L <<  3 )
+    // #define FT_FACE_FLAG_HORIZONTAL        ( 1L <<  4 )
+    // #define FT_FACE_FLAG_VERTICAL          ( 1L <<  5 )
+    // #define FT_FACE_FLAG_KERNING           ( 1L <<  6 )
+    // #define FT_FACE_FLAG_FAST_GLYPHS       ( 1L <<  7 )
+    // #define FT_FACE_FLAG_MULTIPLE_MASTERS  ( 1L <<  8 )
+    // #define FT_FACE_FLAG_GLYPH_NAMES       ( 1L <<  9 )
+    // #define FT_FACE_FLAG_EXTERNAL_STREAM   ( 1L << 10 )
+    // #define FT_FACE_FLAG_HINTER            ( 1L << 11 )
+    // #define FT_FACE_FLAG_CID_KEYED         ( 1L << 12 )
+    // #define FT_FACE_FLAG_TRICKY            ( 1L << 13 )
+    // #define FT_FACE_FLAG_COLOR             ( 1L << 14 )
+    // #define FT_FACE_FLAG_VARIATION         ( 1L << 15 )
+    // #define FT_FACE_FLAG_SVG               ( 1L << 16 )
+    // #define FT_FACE_FLAG_SBIX              ( 1L << 17 )
+    // #define FT_FACE_FLAG_SBIX_OVERLAY      ( 1L << 18 )
+    const assert = std.debug.assert;
+    assert(@bitCast(i64, FaceFlags{ .scalable = true }) == 1 << 0);
+    assert(@bitCast(i64, FaceFlags{ .fixed_sizes = true }) == 1 << 1);
+    assert(@bitCast(i64, FaceFlags{ .fixed_width = true }) == 1 << 2);
+    assert(@bitCast(i64, FaceFlags{ .sfnt = true }) == 1 << 3);
+    assert(@bitCast(i64, FaceFlags{ .horizontal = true }) == 1 << 4);
+    assert(@bitCast(i64, FaceFlags{ .vertical = true }) == 1 << 5);
+    assert(@bitCast(i64, FaceFlags{ .kerning = true }) == 1 << 6);
+    assert(@bitCast(i64, FaceFlags{ .fast_glyphs = true }) == 1 << 7);
+    assert(@bitCast(i64, FaceFlags{ .multiple_masters = true }) == 1 << 8);
+    assert(@bitCast(i64, FaceFlags{ .glyph_names = true }) == 1 << 9);
+    assert(@bitCast(i64, FaceFlags{ .external_stream = true }) == 1 << 10);
+    assert(@bitCast(i64, FaceFlags{ .hinter = true }) == 1 << 11);
+    assert(@bitCast(i64, FaceFlags{ .cid_keyed = true }) == 1 << 12);
+    assert(@bitCast(i64, FaceFlags{ .tricky = true }) == 1 << 13);
+    assert(@bitCast(i64, FaceFlags{ .color = true }) == 1 << 14);
+    assert(@bitCast(i64, FaceFlags{ .variation = true }) == 1 << 15);
+    assert(@bitCast(i64, FaceFlags{ .svg = true }) == 1 << 16);
+    assert(@bitCast(i64, FaceFlags{ .sbix = true }) == 1 << 17);
+    assert(@bitCast(i64, FaceFlags{ .sbix_overlay = true }) == 1 << 18);
+}
+
 pub const Vector = extern struct {
     x: Pos,
     y: Pos,
@@ -146,7 +213,7 @@ pub const BBox = extern struct {
 pub const FaceRec = extern struct {
     num_faces: i64,
     face_index: i64,
-    face_flags: i64,
+    face_flags: FaceFlags = .{},
     style_flags: i64,
     num_glyphs: i64,
 
