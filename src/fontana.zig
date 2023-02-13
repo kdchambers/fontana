@@ -732,7 +732,7 @@ pub fn Font(comptime backend: Backend, comptime types: Types) type {
                     };
 
                     const screen_extent = types.Extent2DNative{
-                        .x = @floatCast(f32, cursor.x),
+                        .x = @floatCast(f32, cursor.x + (glyph_metrics.leftside_bearing * screen_scale.horizontal)),
                         .y = @floatCast(f32, cursor.y + (@floatCast(f32, glyph_metrics.descent) * screen_scale.vertical)),
                         .width = @floatCast(f32, @intToFloat(f64, glyph_texture_extent.width) * screen_scale.horizontal),
                         .height = @floatCast(f32, @intToFloat(f64, glyph_texture_extent.height) * screen_scale.vertical),
@@ -783,7 +783,7 @@ pub fn Font(comptime backend: Backend, comptime types: Types) type {
             var pen: Pen = undefined;
             pen.font = &self.internal;
             pen.atlas = atlas_ref;
-            pen.atlas_entries = try allocator.alloc(types.Extent2DPixel, 64);
+            pen.atlas_entries = try allocator.alloc(types.Extent2DPixel, 128);
             pen.codepoints = codepoints;
             const funit_to_pixel = otf.fUnitToPixelScale(size_point, points_per_pixel, font.units_per_em);
             for (codepoints) |codepoint, codepoint_i| {
