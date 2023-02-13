@@ -38,6 +38,8 @@ const FreetypeHarfbuzzImplementation = struct {
     //
     const HbDestroyFn = *const fn (?*void) callconv(.C) void;
     const HbFontCreateFn = *const fn (freetype.Face, ?HbDestroyFn) callconv(.C) *harfbuzz.Font;
+    const HbFontSetFuncsFn = *const fn (font: *harfbuzz.Font) callconv(.C) void;
+    const HbFontChangedFn = *const fn (font: *harfbuzz.Font) callconv(.C) void;
     const HbFaceCreateFn = *const fn (freetype.Face, ?HbDestroyFn) callconv(.C) *harfbuzz.Face;
     const HbLanguageFromStringFn = *const fn ([*]const u8, i32) callconv(.C) harfbuzz.Language;
     const HbShapeFn = *const fn (*harfbuzz.Font, *harfbuzz.Buffer, ?[*]const harfbuzz.Feature, u32) callconv(.C) void;
@@ -62,6 +64,8 @@ const FreetypeHarfbuzzImplementation = struct {
     setCharSizeFn: SetCharSizeFn,
 
     hbFontCreateFn: HbFontCreateFn,
+    hbFontSetFuncs: HbFontSetFuncsFn,
+    hbFontChanged: HbFontChangedFn,
     hbFaceCreateFn: HbFaceCreateFn,
     hbShapeFn: HbShapeFn,
     hbLanguageFromStringFn: HbLanguageFromStringFn,
@@ -106,10 +110,24 @@ const FreetypeHarfbuzzImplementation = struct {
             return error.LookupFailed;
         impl.setCharSizeFn = freetype_handle.lookup(Self.SetCharSizeFn, "FT_Set_Char_Size") orelse
             return error.LookupFailed;
-        impl.hbFontCreateFn = harfbuzz_handle.lookup(Self.HbFontCreateFn, "hb_ft_font_create") orelse
+
+        _ = impl.setCharSizeFn(
+            impl.face,
+            0,
+            @floatToInt(i32, 16 * 64),
+            @floatToInt(u32, 96),
+            @floatToInt(u32, 96),
+        );
+
+        impl.hbFontCreateFn = harfbuzz_handle.lookup(Self.HbFontCreateFn, "hb_ft_font_create_referenced") orelse
+            return error.LookupFailed;
+        impl.hbFontSetFuncs = harfbuzz_handle.lookup(Self.HbFontSetFuncsFn, "hb_ft_font_set_funcs") orelse
+            return error.LookupFailed;
+        impl.hbFontChanged = harfbuzz_handle.lookup(Self.HbFontChangedFn, "hb_ft_font_changed") orelse
             return error.LookupFailed;
 
         impl.harfbuzz_font = impl.hbFontCreateFn(impl.face, null);
+        // impl.hbFontSetFuncs(impl.harfbuzz_font);
 
         impl.hbBufferCreateFn = harfbuzz_handle.lookup(Self.HbBufferCreateFn, "hb_buffer_create") orelse
             return error.LookupFailed;
@@ -157,8 +175,58 @@ const FreetypeHarfbuzzImplementation = struct {
 };
 
 const FreetypeImplementation = struct {
+    const Self = @This();
+
+    const InitFn = *const fn (*freetype.Library) callconv(.C) void;
+    const DoneFn = *const fn (freetype.Library) callconv(.C) i32;
+    const NewFaceFn = *const fn (freetype.Library, [*:0]const u8, i64, *freetype.Face) callconv(.C) i32;
+    const GetCharIndexFn = *const fn (freetype.Face, u64) callconv(.C) u32;
+    const LoadCharFn = *const fn (freetype.Face, u64, freetype.LoadFlags) callconv(.C) i32;
+    const LoadGlyphFn = *const fn (freetype.Face, u32, freetype.LoadFlags) callconv(.C) i32;
+    const SetCharSizeFn = *const fn (freetype.Face, freetype.F26Dot6, freetype.F26Dot6, u32, u32) callconv(.C) i32;
+
+    initFn: InitFn,
+    doneFn: DoneFn,
+    newFaceFn: NewFaceFn,
+    getCharIndexFn: GetCharIndexFn,
+    loadCharFn: LoadCharFn,
+    loadGlyphFn: LoadGlyphFn,
+    setCharSizeFn: SetCharSizeFn,
+
     library: freetype.Library,
     face: freetype.Face,
+
+    pub fn initFromFile(allocator: std.mem.Allocator, font_path: []const u8) !FreetypeImplementation {
+        var freetype_handle = DynLib.open("libfreetype.so") catch return error.LinkFreetypeFailed;
+
+        var impl: FreetypeImplementation = undefined;
+
+        impl.initFn = freetype_handle.lookup(Self.InitFn, "FT_Init_FreeType") orelse return error.LookupFailed;
+        impl.doneFn = freetype_handle.lookup(Self.DoneFn, "FT_Done_FreeType") orelse return error.LookupFailed;
+        impl.newFaceFn = freetype_handle.lookup(Self.NewFaceFn, "FT_New_Face") orelse return error.LookupFailed;
+
+        _ = impl.initFn(&impl.library);
+
+        const c_font_path = try allocator.dupeZ(u8, font_path);
+        defer allocator.free(c_font_path);
+
+        _ = impl.newFaceFn(impl.library, c_font_path, 0, &impl.face);
+
+        impl.loadCharFn = freetype_handle.lookup(Self.LoadCharFn, "FT_Load_Char") orelse
+            return error.LookupFailed;
+        impl.loadGlyphFn = freetype_handle.lookup(Self.LoadGlyphFn, "FT_Load_Glyph") orelse
+            return error.LookupFailed;
+        impl.getCharIndexFn = freetype_handle.lookup(Self.GetCharIndexFn, "FT_Get_Char_Index") orelse
+            return error.LookupFailed;
+        impl.setCharSizeFn = freetype_handle.lookup(Self.SetCharSizeFn, "FT_Set_Char_Size") orelse
+            return error.LookupFailed;
+
+        return impl;
+    }
+
+    pub fn deinit(self: *@This(), _: std.mem.Allocator) void {
+        _ = self.doneFn(self.library);
+    }
 };
 
 const FontanaImplementation = struct {
@@ -256,6 +324,12 @@ pub fn Font(comptime backend: Backend, comptime types: Types) type {
                 writer_interface: anytype,
             ) !void {
                 switch (comptime backend) {
+                    .freetype => return self.writeFreetype(
+                        codepoints,
+                        placement,
+                        screen_scale,
+                        writer_interface,
+                    ),
                     .freetype_harfbuzz => return self.writeFreetypeHarfbuzz(
                         codepoints,
                         placement,
@@ -268,7 +342,6 @@ pub fn Font(comptime backend: Backend, comptime types: Types) type {
                         screen_scale,
                         writer_interface,
                     ),
-                    else => unreachable,
                 }
             }
 
@@ -526,7 +599,6 @@ pub fn Font(comptime backend: Backend, comptime types: Types) type {
                     const y_advance = @intToFloat(f64, position_list[i].y_advance) / 64.0;
                     const x_offset = @intToFloat(f32, position_list[i].x_offset) / 64.0;
                     const y_offset = @intToFloat(f32, position_list[i].y_offset) / 64.0;
-
                     const glyph_index: u32 = impl.getCharIndexFn(impl.face, codepoint);
                     std.debug.assert(glyph_index != 0);
 
@@ -555,6 +627,45 @@ pub fn Font(comptime backend: Backend, comptime types: Types) type {
                     }
                     cursor.x += @floatCast(f32, x_advance * screen_scale.horizontal);
                     cursor.y += @floatCast(f32, y_advance * screen_scale.vertical);
+                }
+            }
+
+            inline fn writeFreetype(
+                self: *@This(),
+                codepoints: []const u8,
+                placement: types.Coordinates2DNative,
+                screen_scale: types.Scale2D,
+                writer_interface: anytype,
+            ) !void {
+                var impl = self.font;
+                var cursor = placement;
+                const texture_width_height: f32 = @intToFloat(f32, self.atlas.size);
+                var face = impl.*.face;
+                for (codepoints) |codepoint| {
+                    const err_code = impl.loadCharFn(face, @intCast(u32, codepoint), .{ .render = true });
+                    std.debug.assert(err_code == 0);
+                    const glyph_height = @intToFloat(f32, face.glyph.metrics.height) / 64;
+                    const glyph_width = @intToFloat(f32, face.glyph.metrics.width) / 64;
+                    const advance = @intToFloat(f32, face.glyph.metrics.hori_advance) / 64;
+                    const x_offset: f32 = (advance - glyph_width) / 2.0;
+                    const y_offset: f32 = glyph_height - (@intToFloat(f32, face.glyph.metrics.hori_bearing_y) / 64);
+                    if (codepoint != ' ') {
+                        const glyph_texture_extent = self.textureExtentFromCodepoint(codepoint);
+                        const texture_extent = types.Extent2DNative{
+                            .x = @intToFloat(f32, glyph_texture_extent.x) / texture_width_height,
+                            .y = @intToFloat(f32, glyph_texture_extent.y) / texture_width_height,
+                            .width = @intToFloat(f32, glyph_texture_extent.width) / texture_width_height,
+                            .height = @intToFloat(f32, glyph_texture_extent.height) / texture_width_height,
+                        };
+                        const screen_extent = types.Extent2DNative{
+                            .x = @floatCast(f32, cursor.x + (x_offset * screen_scale.horizontal)),
+                            .y = @floatCast(f32, cursor.y + (y_offset * screen_scale.vertical)),
+                            .width = @floatCast(f32, @intToFloat(f64, glyph_texture_extent.width) * screen_scale.horizontal),
+                            .height = @floatCast(f32, @intToFloat(f64, glyph_texture_extent.height) * screen_scale.vertical),
+                        };
+                        try writer_interface.write(screen_extent, texture_extent);
+                    }
+                    cursor.x += @floatCast(f32, advance * screen_scale.horizontal);
                 }
             }
 
@@ -663,7 +774,7 @@ pub fn Font(comptime backend: Backend, comptime types: Types) type {
             return pen;
         }
 
-        inline fn createPenFreetypeHarfbuzz(
+        inline fn createPenFreetype(
             self: *@This(),
             comptime PixelType: type,
             allocator: std.mem.Allocator,
@@ -732,6 +843,76 @@ pub fn Font(comptime backend: Backend, comptime types: Types) type {
             return pen;
         }
 
+        inline fn createPenFreetypeHarfbuzz(
+            self: *@This(),
+            comptime PixelType: type,
+            allocator: std.mem.Allocator,
+            size_point: f64,
+            points_per_pixel: f64,
+            codepoints: []const u8,
+            texture_size: u32,
+            texture_pixels: [*]PixelType,
+            atlas_ref: *Atlas,
+        ) !Pen {
+            const face = self.internal.face;
+            _ = self.internal.setCharSizeFn(
+                self.internal.face,
+                0,
+                @floatToInt(i32, size_point * 64),
+                @floatToInt(u32, points_per_pixel),
+                @floatToInt(u32, points_per_pixel),
+            );
+            self.internal.hbFontChanged(self.internal.harfbuzz_font);
+            var pen: Pen = undefined;
+            pen.font = &self.internal;
+            pen.atlas = atlas_ref;
+            pen.atlas_entries = try allocator.alloc(types.Extent2DPixel, 128);
+            pen.codepoints = codepoints;
+            for (codepoints) |codepoint, codepoint_i| {
+                const err_code = self.internal.loadCharFn(face, @intCast(u32, codepoint), .{ .render = true });
+                std.debug.assert(err_code == 0);
+                const bitmap = face.glyph.bitmap;
+                const bitmap_height = bitmap.rows;
+                const bitmap_width = bitmap.width;
+                // TODO: Implement spacing in Atlas
+                pen.atlas_entries[codepoint_i] = try pen.atlas.reserve(
+                    types.Extent2DPixel,
+                    allocator,
+                    bitmap_width + 2,
+                    bitmap_height + 2,
+                );
+                pen.atlas_entries[codepoint_i].x += 1;
+                pen.atlas_entries[codepoint_i].y += 1;
+                pen.atlas_entries[codepoint_i].width -= 2;
+                pen.atlas_entries[codepoint_i].height -= 2;
+                const placement = pen.atlas_entries[codepoint_i];
+                const bitmap_pixels: [*]const u8 = bitmap.buffer;
+                var y: usize = 0;
+                while (y < bitmap_height) : (y += 1) {
+                    var x: usize = 0;
+                    while (x < bitmap_width) : (x += 1) {
+                        const value = @intToFloat(f32, bitmap_pixels[x + (y * bitmap_width)]) / 255;
+                        const index: usize = (placement.x + x) + ((y + placement.y) * texture_size);
+                        // TODO: Detect type using comptime
+                        const use_transparency: bool = @hasField(PixelType, "a");
+                        if (@hasField(PixelType, "r"))
+                            texture_pixels[index].r = if (use_transparency) 0.8 else value;
+
+                        if (@hasField(PixelType, "g"))
+                            texture_pixels[index].g = if (use_transparency) 0.8 else value;
+
+                        if (@hasField(PixelType, "b"))
+                            texture_pixels[index].b = if (use_transparency) 0.8 else value;
+
+                        if (use_transparency) {
+                            texture_pixels[index].a = value;
+                        }
+                    }
+                }
+            }
+            return pen;
+        }
+
         pub fn createPen(
             self: *@This(),
             comptime PixelType: type,
@@ -744,7 +925,7 @@ pub fn Font(comptime backend: Backend, comptime types: Types) type {
             atlas_ref: *Atlas,
         ) !Pen {
             // TODO: Convert point to pixel, etc
-            return switch (backend) {
+            return switch (comptime backend) {
                 .fontana => self.createPenFontana(
                     PixelType,
                     allocator,
@@ -765,7 +946,16 @@ pub fn Font(comptime backend: Backend, comptime types: Types) type {
                     texture_pixels,
                     atlas_ref,
                 ),
-                else => unreachable,
+                .freetype => self.createPenFreetype(
+                    PixelType,
+                    allocator,
+                    size.point,
+                    points_per_pixel,
+                    codepoints,
+                    texture_size,
+                    texture_pixels,
+                    atlas_ref,
+                ),
             };
         }
     };
