@@ -354,13 +354,18 @@ pub fn Font(comptime backend: Backend, comptime types: Types) type {
                         screen_scale,
                         writer_interface,
                     ),
+                    .freetype => return self.writeCenteredFreetypeHarfbuzz(
+                        codepoints,
+                        placement_extent,
+                        screen_scale,
+                        writer_interface,
+                    ),
                     .fontana => return self.writeCenteredFontana(
                         codepoints,
                         placement_extent,
                         screen_scale,
                         writer_interface,
                     ),
-                    else => unreachable,
                 }
             }
 
@@ -543,6 +548,7 @@ pub fn Font(comptime backend: Backend, comptime types: Types) type {
 
                     const glyph = impl.face.glyph;
                     const descent = (@intToFloat(f64, glyph.metrics.height - glyph.metrics.hori_bearing_y) / 64);
+                    const leftside_bearing = @floatCast(f32, (@intToFloat(f32, glyph.metrics.hori_bearing_x) / 64) * screen_scale.horizontal);
                     if (codepoint != ' ') {
                         const glyph_texture_extent = self.textureExtentFromCodepoint(codepoint);
                         const texture_extent = types.Extent2DNative{
@@ -552,7 +558,7 @@ pub fn Font(comptime backend: Backend, comptime types: Types) type {
                             .height = @intToFloat(f32, glyph_texture_extent.height) / texture_width_height,
                         };
                         const screen_extent = types.Extent2DNative{
-                            .x = @floatCast(f32, margin_horizontal + cursor.x + (x_offset * screen_scale.horizontal)),
+                            .x = @floatCast(f32, margin_horizontal + cursor.x + (x_offset * screen_scale.horizontal)) + leftside_bearing,
                             .y = @floatCast(f32, margin_vertical + cursor.y + ((y_offset + descent) * screen_scale.vertical)),
                             .width = @floatCast(f32, @intToFloat(f64, glyph_texture_extent.width) * screen_scale.horizontal),
                             .height = @floatCast(f32, @intToFloat(f64, glyph_texture_extent.height) * screen_scale.vertical),
@@ -646,6 +652,106 @@ pub fn Font(comptime backend: Backend, comptime types: Types) type {
 
                 const has_kerning = face.face_flags.kerning;
 
+                var previous_codepoint: u8 = 0;
+                for (codepoints) |codepoint, codepoint_i| {
+                    const err_code = impl.loadCharFn(face, @intCast(u32, codepoint), .{ .render = true });
+                    std.debug.assert(err_code == 0);
+                    const glyph_height = @intToFloat(f32, face.glyph.metrics.height) / 64;
+                    const glyph_width = @intToFloat(f32, face.glyph.metrics.width) / 64;
+                    const advance = @intToFloat(f32, face.glyph.metrics.hori_advance) / 64;
+                    const x_offset: f32 = blk: {
+                        if (codepoint_i == 0 or !has_kerning) {
+                            break :blk (advance - glyph_width) / 2.0;
+                        }
+                        var kerning: freetype.Vector = undefined;
+                        const ret = impl.getKerningFn(
+                            face,
+                            @intCast(u32, previous_codepoint),
+                            @intCast(u32, codepoint),
+                            0, // Default kerning
+                            &kerning,
+                        );
+                        if (ret != 0) {
+                            std.log.warn("FT_Get_Kerning failed for {c} and {c}", .{
+                                previous_codepoint,
+                                codepoint,
+                            });
+                            break :blk (advance - glyph_width) / 2.0;
+                        }
+                        // std.log.info("Kern {c} -> {c}: {d}", .{
+                        //     previous_codepoint,
+                        //     codepoint,
+                        //     kerning.x,
+                        // });
+                        break :blk (@intToFloat(f32, kerning.x) / 64) + (advance - glyph_width) / 2.0;
+                    };
+
+                    const y_offset: f32 = glyph_height - (@intToFloat(f32, face.glyph.metrics.hori_bearing_y) / 64);
+                    const leftside_bearing = @floatCast(f32, (@intToFloat(f32, face.glyph.metrics.hori_bearing_x) / 64) * screen_scale.horizontal);
+
+                    if (codepoint != ' ') {
+                        const glyph_texture_extent = self.textureExtentFromCodepoint(codepoint);
+                        const texture_extent = types.Extent2DNative{
+                            .x = @intToFloat(f32, glyph_texture_extent.x) / texture_width_height,
+                            .y = @intToFloat(f32, glyph_texture_extent.y) / texture_width_height,
+                            .width = @intToFloat(f32, glyph_texture_extent.width) / texture_width_height,
+                            .height = @intToFloat(f32, glyph_texture_extent.height) / texture_width_height,
+                        };
+                        const screen_extent = types.Extent2DNative{
+                            .x = @floatCast(f32, cursor.x + (x_offset * screen_scale.horizontal)) + leftside_bearing,
+                            .y = @floatCast(f32, cursor.y + (y_offset * screen_scale.vertical)),
+                            .width = @floatCast(f32, @intToFloat(f64, glyph_texture_extent.width) * screen_scale.horizontal),
+                            .height = @floatCast(f32, @intToFloat(f64, glyph_texture_extent.height) * screen_scale.vertical),
+                        };
+                        try writer_interface.write(screen_extent, texture_extent);
+                    }
+                    cursor.x += @floatCast(f32, advance * screen_scale.horizontal);
+                    previous_codepoint = codepoint;
+                }
+            }
+
+            inline fn writeCenteredFreetype(
+                self: *@This(),
+                codepoints: []const u8,
+                placement_extent: types.Extent2DNative,
+                screen_scale: types.Scale2D,
+                writer_interface: anytype,
+            ) !void {
+                var impl = self.font;
+                const texture_width_height: f32 = @intToFloat(f32, self.atlas.size);
+                var face = impl.*.face;
+
+                var max_descender: f64 = 0;
+                var max_height: f64 = 0;
+                var rendered_text_width: f64 = 0;
+                for (codepoints) |codepoint| {
+                    const err_code = impl.loadCharFn(face, @intCast(u32, codepoint), .{});
+                    std.debug.assert(err_code == 0);
+                    const glyph_height = @intToFloat(f32, face.glyph.metrics.height) / 64;
+                    const glyph_width = @intToFloat(f32, face.glyph.metrics.width) / 64;
+                    const descender: f32 = glyph_height - (@intToFloat(f32, face.glyph.metrics.hori_bearing_y) / 64);
+                    rendered_text_width += glyph_width;
+                    max_height = @max(max_height, glyph_height - descender);
+                    max_descender = @max(max_descender, descender);
+                }
+
+                if (rendered_text_width > placement_extent.width)
+                    return error.InsufficientHorizontalSpace;
+
+                const total_height = max_height + max_descender;
+
+                if (total_height > placement_extent.height)
+                    return error.InsufficientVerticalSpace;
+
+                const margin_horizontal: f32 = (placement_extent.width - rendered_text_width) / 2.0;
+                const margin_vertical: f32 = (placement_extent.height - total_height) / 2.0;
+
+                var cursor = types.Coordinates2DNative{
+                    .x = placement_extent.x + margin_horizontal,
+                    .y = placement_extent.y + margin_vertical,
+                };
+
+                const has_kerning = face.face_flags.kerning;
                 var previous_codepoint: u8 = 0;
                 for (codepoints) |codepoint, codepoint_i| {
                     const err_code = impl.loadCharFn(face, @intCast(u32, codepoint), .{ .render = true });
