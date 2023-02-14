@@ -354,7 +354,7 @@ pub fn Font(comptime backend: Backend, comptime types: Types) type {
                         screen_scale,
                         writer_interface,
                     ),
-                    .freetype => return self.writeCenteredFreetypeHarfbuzz(
+                    .freetype => return self.writeCenteredFreetype(
                         codepoints,
                         placement_extent,
                         screen_scale,
@@ -721,34 +721,46 @@ pub fn Font(comptime backend: Backend, comptime types: Types) type {
                 const texture_width_height: f32 = @intToFloat(f32, self.atlas.size);
                 var face = impl.*.face;
 
-                var max_descender: f64 = 0;
-                var max_height: f64 = 0;
-                var rendered_text_width: f64 = 0;
-                for (codepoints) |codepoint| {
-                    const err_code = impl.loadCharFn(face, @intCast(u32, codepoint), .{});
-                    std.debug.assert(err_code == 0);
-                    const glyph_height = @intToFloat(f32, face.glyph.metrics.height) / 64;
-                    const glyph_width = @intToFloat(f32, face.glyph.metrics.width) / 64;
-                    const descender: f32 = glyph_height - (@intToFloat(f32, face.glyph.metrics.hori_bearing_y) / 64);
-                    rendered_text_width += glyph_width;
-                    max_height = @max(max_height, glyph_height - descender);
-                    max_descender = @max(max_descender, descender);
-                }
+                const RenderedTextMetrics = struct {
+                    max_ascender: f64,
+                    max_descender: f64,
+                    width: f64,
+                };
+                const rendered_text_metrics: RenderedTextMetrics = blk: {
+                    var max_descender: f64 = 0;
+                    var max_height: f64 = 0;
+                    var rendered_text_width: f64 = 0;
+                    for (codepoints) |codepoint| {
+                        const err_code = impl.loadCharFn(face, @intCast(u32, codepoint), .{});
+                        std.debug.assert(err_code == 0);
+                        const glyph_height = @intToFloat(f32, face.glyph.metrics.height) / 64;
+                        const glyph_width = @intToFloat(f32, face.glyph.metrics.width) / 64;
+                        const descender: f32 = glyph_height - (@intToFloat(f32, face.glyph.metrics.hori_bearing_y) / 64);
+                        rendered_text_width += glyph_width;
+                        max_height = @max(max_height, glyph_height - descender);
+                        max_descender = @max(max_descender, descender);
+                    }
+                    break :blk .{
+                        .max_ascender = max_height * screen_scale.vertical,
+                        .max_descender = max_descender * screen_scale.vertical,
+                        .width = rendered_text_width * screen_scale.horizontal,
+                    };
+                };
 
-                if (rendered_text_width > placement_extent.width)
+                if (rendered_text_metrics.width > placement_extent.width)
                     return error.InsufficientHorizontalSpace;
 
-                const total_height = max_height + max_descender;
+                const total_height = rendered_text_metrics.max_ascender + rendered_text_metrics.max_descender;
 
                 if (total_height > placement_extent.height)
                     return error.InsufficientVerticalSpace;
 
-                const margin_horizontal: f32 = (placement_extent.width - rendered_text_width) / 2.0;
-                const margin_vertical: f32 = (placement_extent.height - total_height) / 2.0;
+                const margin_horizontal: f64 = ((placement_extent.width - rendered_text_metrics.width) / 2.0);
+                const margin_vertical: f64 = ((placement_extent.height - total_height) / 2.0);
 
                 var cursor = types.Coordinates2DNative{
-                    .x = placement_extent.x + margin_horizontal,
-                    .y = placement_extent.y + margin_vertical,
+                    .x = @floatCast(f32, placement_extent.x + margin_horizontal),
+                    .y = @floatCast(f32, placement_extent.y - margin_vertical),
                 };
 
                 const has_kerning = face.face_flags.kerning;
