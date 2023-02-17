@@ -34,6 +34,9 @@ pub fn Font(comptime options: FontOptions) type {
     };
 }
 
+pub const OverridableTypes = font_api.OverridableTypes;
+pub const PenOptions = font_api.PenOptions;
+
 pub const Backend = enum {
     freetype,
     freetype_harfbuzz,

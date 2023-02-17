@@ -250,12 +250,7 @@ pub fn PenConfigInternal(comptime options: api.PenConfigOptionsInternal) type {
 
 pub fn FontConfig(comptime options: api.FontOptions) type {
     return struct {
-        pub const PenOptions = struct {
-            pixel_format: api.SupportedPixelFormat,
-            PixelType: ?type = null,
-        };
-
-        pub fn PenConfig(comptime pen_options: PenOptions) type {
+        pub fn PenConfig(comptime pen_options: api.PenOptions) type {
             const PixelType = pen_options.PixelType orelse switch (pen_options.pixel_format) {
                 .r8g8b8a8 => graphics.RGBA(u8),
                 .r32g32b32a32 => graphics.RGBA(f32),
@@ -292,7 +287,7 @@ pub fn FontConfig(comptime options: api.FontOptions) type {
             self.font.deinit(allocator);
         }
 
-        pub fn PixelTypeInferred(comptime pen_options: PenOptions) type {
+        pub fn PixelTypeInferred(comptime pen_options: api.PenOptions) type {
             return pen_options.PixelType orelse switch (pen_options.pixel_format) {
                 .r8g8b8a8 => graphics.RGBA(u8),
                 .r32g32b32a32 => graphics.RGBA(f32),
@@ -302,7 +297,7 @@ pub fn FontConfig(comptime options: api.FontOptions) type {
 
         pub inline fn createPen(
             self: *@This(),
-            comptime pen_options: PenOptions,
+            comptime pen_options: api.PenOptions,
             allocator: std.mem.Allocator,
             size_point: f64,
             points_per_pixel: f64,
