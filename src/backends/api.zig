@@ -27,6 +27,11 @@ pub const SupportedPixelFormat = enum {
     r32g32b32a32,
 };
 
+pub const PenOptions = struct {
+    pixel_format: SupportedPixelFormat,
+    PixelType: ?type = null,
+};
+
 pub const PenConfigOptionsInternal = struct {
     const Types = struct {
         //

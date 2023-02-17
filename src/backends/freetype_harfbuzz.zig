@@ -68,6 +68,8 @@ pub fn PenConfigInternal(comptime options: api.PenConfigOptionsInternal) type {
         codepoints: []const u8,
         atlas_entries: []types.Extent2DPixel,
         atlas_entries_count: u32,
+        points_per_pixel: u32,
+        size_point: i32,
 
         inline fn init(
             self: *@This(),
@@ -84,14 +86,18 @@ pub fn PenConfigInternal(comptime options: api.PenConfigOptionsInternal) type {
             self.atlas_ref = atlas_ref;
             self.atlas_entries = try allocator.alloc(types.Extent2DPixel, 128);
             self.codepoints = codepoints;
+            self.points_per_pixel = @floatToInt(u32, points_per_pixel);
+            self.size_point = @floatToInt(i32, size_point * 64);
             const face = self.backend_ref.face;
             _ = self.backend_ref.setCharSizeFn(
                 self.backend_ref.face,
                 0,
-                @floatToInt(i32, size_point * 64),
-                @floatToInt(u32, points_per_pixel),
-                @floatToInt(u32, points_per_pixel),
+                self.size_point,
+                self.points_per_pixel,
+                self.points_per_pixel,
             );
+            self.backend_ref.hbFontChanged(self.backend_ref.harfbuzz_font);
+
             for (codepoints) |codepoint, codepoint_i| {
                 const err_code = self.backend_ref.loadCharFn(face, @intCast(u32, codepoint), .{ .render = true });
                 std.debug.assert(err_code == 0);
@@ -148,6 +154,15 @@ pub fn PenConfigInternal(comptime options: api.PenConfigOptionsInternal) type {
             screen_scale: types.Scale2D,
             writer_interface: anytype,
         ) !void {
+            _ = self.backend_ref.setCharSizeFn(
+                self.backend_ref.face,
+                0,
+                self.size_point,
+                self.points_per_pixel,
+                self.points_per_pixel,
+            );
+            self.backend_ref.hbFontChanged(self.backend_ref.harfbuzz_font);
+
             var buffer = self.backend_ref.hbBufferCreateFn();
             defer self.backend_ref.hbBufferDestroyFn(buffer);
 
@@ -256,6 +271,15 @@ pub fn PenConfigInternal(comptime options: api.PenConfigOptionsInternal) type {
             screen_scale: types.Scale2D,
             writer_interface: anytype,
         ) !void {
+            _ = self.backend_ref.setCharSizeFn(
+                self.backend_ref.face,
+                0,
+                self.size_point,
+                self.points_per_pixel,
+                self.points_per_pixel,
+            );
+            self.backend_ref.hbFontChanged(self.backend_ref.harfbuzz_font);
+
             var buffer = self.backend_ref.hbBufferCreateFn();
             defer self.backend_ref.hbBufferDestroyFn(buffer);
             self.backend_ref.hbBufferAddUTF8Fn(buffer, codepoints.ptr, @intCast(i32, codepoints.len), 0, -1);
