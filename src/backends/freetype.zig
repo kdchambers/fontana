@@ -223,16 +223,21 @@ pub fn PenConfigInternal(comptime options: api.PenConfigOptionsInternal) type {
                 var max_descender: f64 = 0;
                 var max_height: f64 = 0;
                 var rendered_text_width: f64 = 0;
+                var glyph_width: f32 = 0;
+                var advance: f32 = 0;
                 for (codepoints) |codepoint| {
                     const err_code = self.backend_ref.loadCharFn(face, @intCast(u32, codepoint), .{});
                     std.debug.assert(err_code == 0);
                     const glyph_height = @intToFloat(f32, face.glyph.metrics.height) / 64;
-                    const glyph_width = @intToFloat(f32, face.glyph.metrics.width) / 64;
+                    glyph_width = @intToFloat(f32, face.glyph.metrics.width) / 64;
+                    advance = @intToFloat(f32, face.glyph.metrics.hori_advance) / 64;
                     const descender: f32 = glyph_height - (@intToFloat(f32, face.glyph.metrics.hori_bearing_y) / 64);
-                    rendered_text_width += glyph_width;
+                    rendered_text_width += advance;
                     max_height = @max(max_height, glyph_height - descender);
                     max_descender = @max(max_descender, descender);
                 }
+                const overshoot = @max(0.0, glyph_width - advance);
+                rendered_text_width -= overshoot;
                 break :blk .{
                     .max_ascender = max_height * screen_scale.vertical,
                     .max_descender = max_descender * screen_scale.vertical,
