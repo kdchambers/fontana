@@ -27,6 +27,22 @@ pub const SupportedPixelFormat = enum {
     r32g32b32a32,
 };
 
+pub const PenConfigOptionsInternal = struct {
+    const Types = struct {
+        //
+        // No defaults as we expect this to be populated by FontConfig
+        //
+        Extent2DPixel: type,
+        Extent2DNative: type,
+        Coordinates2DNative: type,
+        Scale2D: type,
+        Pixel: type,
+    };
+    BackendType: type,
+    type_overrides: Types,
+    pixel_format: SupportedPixelFormat,
+};
+
 pub fn validatePixelFormat(comptime PixelType: anytype, comptime pixel_format: SupportedPixelFormat) bool {
     _ = PixelType;
     _ = pixel_format;

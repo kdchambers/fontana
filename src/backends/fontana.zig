@@ -9,6 +9,9 @@ const graphics = @import("../graphics.zig");
 const rasterizer = @import("../rasterizer.zig");
 const api = @import("api.zig");
 
+// Font type with default options
+pub const Font = FontConfig(.{});
+
 const ScaledGlyphMetric = struct {
     advance_x: f64,
     leftside_bearing: f64,
@@ -16,27 +19,11 @@ const ScaledGlyphMetric = struct {
     height: f64,
 };
 
-const PenConfigOptionsInternal = struct {
-    const Types = struct {
-        //
-        // No defaults as we expect this to be populated by FontConfig
-        //
-        Extent2DPixel: type,
-        Extent2DNative: type,
-        Coordinates2DNative: type,
-        Scale2D: type,
-        Pixel: type,
-    };
-
-    type_overrides: Types,
-    pixel_format: api.SupportedPixelFormat,
-};
-
-pub fn PenConfigInternal(comptime options: PenConfigOptionsInternal) type {
+pub fn PenConfigInternal(comptime options: api.PenConfigOptionsInternal) type {
     return struct {
         const types = options.type_overrides;
 
-        font_ref: *otf.FontInfo,
+        backend_ref: *options.BackendType,
         atlas_ref: *Atlas,
         codepoints: []const u8,
         atlas_entries: []types.Extent2DPixel,
@@ -46,7 +33,7 @@ pub fn PenConfigInternal(comptime options: PenConfigOptionsInternal) type {
         pub fn init(
             self: *@This(),
             allocator: std.mem.Allocator,
-            font_ref: *otf.FontInfo,
+            backend_ref: *options.BackendType,
             codepoints: []const u8,
             size_point: f64,
             points_per_pixel: f64,
@@ -54,16 +41,16 @@ pub fn PenConfigInternal(comptime options: PenConfigOptionsInternal) type {
             texture_pixels: [*]types.Pixel,
             atlas_ref: *Atlas,
         ) !void {
-            self.font_ref = font_ref;
+            self.backend_ref = backend_ref;
             self.codepoints = codepoints;
-            self.font_scale = otf.fUnitToPixelScale(size_point, points_per_pixel, font_ref.units_per_em);
+            self.font_scale = otf.fUnitToPixelScale(size_point, points_per_pixel, backend_ref.units_per_em);
             self.atlas_ref = atlas_ref;
             //
             // TODO: Don't hardcode max size
             //
             self.atlas_entries = try allocator.alloc(types.Extent2DPixel, 128);
             for (codepoints) |codepoint, codepoint_i| {
-                const required_dimensions = try otf.getRequiredDimensions(font_ref, codepoint, self.font_scale);
+                const required_dimensions = try otf.getRequiredDimensions(backend_ref, codepoint, self.font_scale);
                 // TODO: Implement spacing in Atlas
                 self.atlas_entries[codepoint_i] = try self.atlas_ref.reserve(
                     types.Extent2DPixel,
@@ -80,25 +67,13 @@ pub fn PenConfigInternal(comptime options: PenConfigOptionsInternal) type {
                     .pixels = texture_pixels,
                     .write_extent = self.atlas_entries[codepoint_i],
                 };
-                try otf.rasterizeGlyph(allocator, pixel_writer, font_ref, @floatCast(f32, self.font_scale), codepoint);
+                try otf.rasterizeGlyph(allocator, pixel_writer, backend_ref, @floatCast(f32, self.font_scale), codepoint);
             }
         }
 
         pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
             allocator.free(self.atlas_entries);
             self.atlas_entries_count = 0;
-        }
-
-        inline fn textureExtentFromCodepoint(self: *@This(), codepoint: u8) types.Extent2DPixel {
-            const atlas_index = blk: {
-                var i: usize = 0;
-                while (i < self.atlas_entries_count) : (i += 1) {
-                    const current_codepoint = self.codepoints[i];
-                    if (current_codepoint == codepoint) break :blk i;
-                }
-                unreachable;
-            };
-            return self.atlas_entries[atlas_index];
         }
 
         pub fn write(
@@ -115,7 +90,7 @@ pub fn PenConfigInternal(comptime options: PenConfigOptionsInternal) type {
             while (i < codepoints.len) : (i += 1) {
                 const codepoint = codepoints[i];
                 if (codepoint == ' ') {
-                    cursor.x += @floatCast(f32, self.font_ref.space_advance * self.font_scale * screen_scale.horizontal);
+                    cursor.x += @floatCast(f32, self.backend_ref.space_advance * self.font_scale * screen_scale.horizontal);
                     continue;
                 }
                 const glyph_metrics = self.font.glyphMetricsFromCodepoint(codepoint);
@@ -160,7 +135,7 @@ pub fn PenConfigInternal(comptime options: PenConfigOptionsInternal) type {
             while (i < codepoints.len) : (i += 1) {
                 const codepoint = codepoints[i];
                 if (codepoint == ' ') {
-                    total_width += self.font_ref.space_advance * self.font_scale;
+                    total_width += self.backend_ref.space_advance * self.font_scale;
                     continue;
                 }
                 const glyph_metrics = self.glyphMetricsFromCodepoint(codepoint);
@@ -206,7 +181,7 @@ pub fn PenConfigInternal(comptime options: PenConfigOptionsInternal) type {
             while (i < codepoints.len) : (i += 1) {
                 const codepoint = codepoints[i];
                 if (codepoint == ' ') {
-                    cursor.x += @floatCast(f32, self.font_ref.space_advance * self.font_scale * screen_scale.horizontal);
+                    cursor.x += @floatCast(f32, self.backend_ref.space_advance * self.font_scale * screen_scale.horizontal);
                     continue;
                 }
                 const glyph_metrics = self.glyphMetricsFromCodepoint(codepoint);
@@ -235,29 +210,43 @@ pub fn PenConfigInternal(comptime options: PenConfigOptionsInternal) type {
             }
         }
 
+        //
+        // Private interface
+        //
+
         inline fn glyphMetricsFromCodepoint(self: *@This(), codepoint: u8) ScaledGlyphMetric {
-            const glyph_index = otf.findGlyphIndex(self.font_ref, codepoint);
+            const glyph_index = otf.findGlyphIndex(self.backend_ref, codepoint);
             var metrics: ScaledGlyphMetric = undefined;
-            const bounding_box = otf.calculateGlyphBoundingBox(self.font_ref, glyph_index) catch unreachable;
+            const bounding_box = otf.calculateGlyphBoundingBox(self.backend_ref, glyph_index) catch unreachable;
             metrics.height = @intToFloat(f64, bounding_box.y1 - bounding_box.y0) * self.font_scale;
             std.debug.assert(metrics.height >= 0);
-            metrics.leftside_bearing = @intToFloat(f64, otf.leftBearingForGlyph(self.font_ref, glyph_index)) * self.font_scale;
-            metrics.advance_x = @intToFloat(f64, otf.advanceXForGlyph(self.font_ref, glyph_index)) * self.font_scale;
+            metrics.leftside_bearing = @intToFloat(f64, otf.leftBearingForGlyph(self.backend_ref, glyph_index)) * self.font_scale;
+            metrics.advance_x = @intToFloat(f64, otf.advanceXForGlyph(self.backend_ref, glyph_index)) * self.font_scale;
             metrics.descent = -@intToFloat(f64, bounding_box.y0) * self.font_scale;
             return metrics;
         }
 
         inline fn kernPairAdvance(self: *@This(), left_codepoint: u8, right_codepoint: u8) ?f64 {
-            const unscaled_opt = otf.kernAdvanceGpos(self.font_ref, left_codepoint, right_codepoint) catch unreachable;
+            const unscaled_opt = otf.kernAdvanceGpos(self.backend_ref, left_codepoint, right_codepoint) catch unreachable;
             if (unscaled_opt) |unscaled| {
                 return @intToFloat(f64, unscaled) * self.font_scale;
             }
             return null;
         }
+
+        inline fn textureExtentFromCodepoint(self: *@This(), codepoint: u8) types.Extent2DPixel {
+            const atlas_index = blk: {
+                var i: usize = 0;
+                while (i < self.atlas_entries_count) : (i += 1) {
+                    const current_codepoint = self.codepoints[i];
+                    if (current_codepoint == codepoint) break :blk i;
+                }
+                unreachable;
+            };
+            return self.atlas_entries[atlas_index];
+        }
     };
 }
-
-pub const Font = FontConfig(.{});
 
 pub fn FontConfig(comptime options: api.FontOptions) type {
     return struct {
@@ -284,6 +273,7 @@ pub fn FontConfig(comptime options: api.FontOptions) type {
                     .Scale2D = options.type_overrides.Scale2D,
                     .Pixel = PixelType,
                 },
+                .BackendType = otf.FontInfo,
                 .pixel_format = pen_options.pixel_format,
             });
         }
