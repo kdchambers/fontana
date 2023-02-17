@@ -264,7 +264,7 @@ pub fn PenConfigInternal(comptime options: api.PenConfigOptionsInternal) type {
             }
         }
 
-        inline fn write(
+        pub inline fn write(
             self: *@This(),
             codepoints: []const u8,
             placement: types.Coordinates2DNative,
