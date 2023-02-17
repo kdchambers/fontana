@@ -373,7 +373,7 @@ pub const FontInfo = extern struct {
     //
     // Slices cannot be used in extern structs (Required for C compat)
     //
-    data: [*]u8,
+    data: [*]const u8,
     data_len: u32,
     glyph_count: i32 = 0,
     loca: SectionRange = .{},
@@ -401,7 +401,8 @@ pub const FontInfo = extern struct {
     space_advance: f32 = 0,
 
     pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
-        allocator.free(self.data[0..self.data_len]);
+        const font_buffer = self.data[0..self.data_len];
+        allocator.free(font_buffer);
     }
 };
 
@@ -935,7 +936,7 @@ pub fn loadFromFile(allocator: std.mem.Allocator, file_path: []const u8) !FontIn
     return try parseFromBytes(font_buffer);
 }
 
-pub fn parseFromBytes(font_data: []u8) !FontInfo {
+pub fn parseFromBytes(font_data: []const u8) !FontInfo {
     var data_sections = DataSections{};
     {
         var fixed_buffer_stream = std.io.FixedBufferStream([]const u8){ .buffer = font_data, .pos = 0 };
