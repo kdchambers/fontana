@@ -397,6 +397,8 @@ pub fn FontConfig(comptime options: api.FontOptions) type {
         face: freetype.Face,
         harfbuzz_font: *harfbuzz.Font,
 
+        font_bytes: []const u8,
+
         pub inline fn construct(bytes: []const u8) !@This() {
             var self: @This() = undefined;
             try self.init(bytes);
@@ -470,11 +472,13 @@ pub fn FontConfig(comptime options: api.FontOptions) type {
                 "hb_buffer_guess_segment_properties",
             ) orelse
                 return error.LookupFailed;
+
+            self.font_bytes = bytes;
         }
 
         pub inline fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
-            _ = allocator;
             _ = self.doneFn(self.library);
+            allocator.free(self.font_bytes);
         }
 
         pub fn PixelTypeInferred(comptime pen_options: PenOptions) type {
