@@ -533,7 +533,7 @@ pub fn loadXAdvances(font: *const FontInfo, codepoints: []const u8, out_advance_
     std.debug.assert(!font.hmtx.isNull());
     const entries = @ptrCast([*]const HorizontalMetric, @alignCast(2, &font.data[font.hmtx.offset]));
     comptime std.debug.assert(@sizeOf(HorizontalMetric) == 4);
-    for (codepoints) |codepoint, codepoint_i| {
+    for (codepoints, 0..) |codepoint, codepoint_i| {
         const glyph_index = findGlyphIndex(font, codepoint);
         const index = @min(font.horizonal_metrics_count - 1, glyph_index);
         out_advance_list[codepoint_i] = std.mem.bigToNative(u16, entries[index].advance_width);

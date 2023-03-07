@@ -49,7 +49,7 @@ pub fn PenConfigInternal(comptime options: api.PenConfigOptionsInternal) type {
             // TODO: Don't hardcode max size
             //
             self.atlas_entries = try allocator.alloc(types.Extent2DPixel, 128);
-            for (codepoints) |codepoint, codepoint_i| {
+            for (codepoints, 0..) |codepoint, codepoint_i| {
                 const required_dimensions = try otf.getRequiredDimensions(backend_ref, codepoint, self.font_scale);
                 // TODO: Implement spacing in Atlas
                 self.atlas_entries[codepoint_i] = try self.atlas_ref.reserve(

@@ -70,7 +70,7 @@ pub fn PenConfigInternal(comptime options: api.PenConfigOptionsInternal) type {
                 self.points_per_pixel,
                 self.points_per_pixel,
             );
-            for (codepoints) |codepoint, codepoint_i| {
+            for (codepoints, 0..) |codepoint, codepoint_i| {
                 const err_code = self.backend_ref.loadCharFn(face, @intCast(u32, codepoint), .{ .render = true });
                 std.debug.assert(err_code == 0);
                 const bitmap = face.glyph.bitmap;
@@ -140,7 +140,7 @@ pub fn PenConfigInternal(comptime options: api.PenConfigOptionsInternal) type {
             const has_kerning = face.face_flags.kerning;
 
             var previous_codepoint: u8 = 0;
-            for (codepoints) |codepoint, codepoint_i| {
+            for (codepoints, 0..) |codepoint, codepoint_i| {
                 const err_code = self.backend_ref.loadCharFn(face, @intCast(u32, codepoint), .{ .render = true });
                 std.debug.assert(err_code == 0);
                 const glyph_height = @intToFloat(f32, face.glyph.metrics.height) / 64;
@@ -263,7 +263,7 @@ pub fn PenConfigInternal(comptime options: api.PenConfigOptionsInternal) type {
 
             const has_kerning = face.face_flags.kerning;
             var previous_codepoint: u8 = 0;
-            for (codepoints) |codepoint, codepoint_i| {
+            for (codepoints, 0..) |codepoint, codepoint_i| {
                 const err_code = self.backend_ref.loadCharFn(face, @intCast(u32, codepoint), .{ .render = true });
                 std.debug.assert(err_code == 0);
                 const glyph_height = @intToFloat(f32, face.glyph.metrics.height) / 64;

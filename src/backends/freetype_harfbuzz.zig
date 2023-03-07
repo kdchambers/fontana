@@ -98,7 +98,7 @@ pub fn PenConfigInternal(comptime options: api.PenConfigOptionsInternal) type {
             );
             self.backend_ref.hbFontChanged(self.backend_ref.harfbuzz_font);
 
-            for (codepoints) |codepoint, codepoint_i| {
+            for (codepoints, 0..) |codepoint, codepoint_i| {
                 const err_code = self.backend_ref.loadCharFn(face, @intCast(u32, codepoint), .{ .render = true });
                 std.debug.assert(err_code == 0);
                 const bitmap = face.glyph.bitmap;

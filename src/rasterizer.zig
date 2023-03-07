@@ -159,7 +159,7 @@ const IntersectionList = struct {
 
         const is_forward = if (dist_forward < dist_reverse) true else false;
         if (is_forward) {
-            for (slice) |other, other_i| {
+            for (slice, 0..) |other, other_i| {
                 if (other.t == base_t or other.t == candidate_t) continue;
                 if (other_i == candidate_index or other_i == base_index) continue;
                 if (other.outline_index != base_outline_index) continue;
@@ -170,7 +170,7 @@ const IntersectionList = struct {
             }
             return true;
         }
-        for (slice) |other, other_i| {
+        for (slice, 0..) |other, other_i| {
             if (other.t == base_t or other.t == candidate_t) continue;
             if (other_i == candidate_index or other_i == base_index) continue;
             if (other.outline_index != base_outline_index) continue;
@@ -940,7 +940,7 @@ fn combineIntersectionLists(
     var pair_count: usize = 0;
     {
         var matched = [1]bool{false} ** 32;
-        for (intersections.toSlice()) |intersection, intersection_i| {
+        for (intersections.toSlice(), 0..) |intersection, intersection_i| {
             if (intersection_i == intersections.length() - 1) break;
             if (matched[intersection_i] == true) continue;
             const intersection_outline_index = intersection.outline_index;
@@ -1116,10 +1116,10 @@ fn intersectionConnectionLessThan(_: void, lhs: IntersectionConnection, rhs: Int
 
 fn calculateHorizontalLineIntersections(scanline_y: f64, outlines: []Outline) !YIntersectionList {
     var intersection_list = YIntersectionList{ .len = 0, .buffer = undefined };
-    for (outlines) |outline, outline_i| {
+    for (outlines, 0..) |outline, outline_i| {
         if (!outline.withinYBounds(scanline_y)) continue;
         const max_t = @intToFloat(f64, outline.segments.len);
-        for (outline.segments) |segment, segment_i| {
+        for (outline.segments, 0..) |segment, segment_i| {
             if (!segment.withinYBounds(scanline_y)) continue;
             const point_a = segment.from;
             const point_b = segment.to;
