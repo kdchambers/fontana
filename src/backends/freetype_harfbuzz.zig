@@ -340,6 +340,65 @@ pub fn PenConfigInternal(comptime options: api.PenConfigOptionsInternal) type {
             }
         }
 
+        pub fn calculateRenderDimensions(self: *@This(), codepoints: []const u8) geometry.Dimensions2D(f32) {
+            _ = self.backend_ref.setCharSizeFn(
+                self.backend_ref.face,
+                0,
+                self.size_point,
+                self.points_per_pixel,
+                self.points_per_pixel,
+            );
+            self.backend_ref.hbFontChanged(self.backend_ref.harfbuzz_font);
+
+            var buffer = self.backend_ref.hbBufferCreateFn();
+            defer self.backend_ref.hbBufferDestroyFn(buffer);
+
+            self.backend_ref.hbBufferAddUTF8Fn(buffer, codepoints.ptr, @intCast(i32, codepoints.len), 0, -1);
+            self.backend_ref.hbBufferSetDirectionFn(buffer, .left_to_right);
+            self.backend_ref.hbBufferSetScriptFn(buffer, .latin);
+            const language = self.backend_ref.hbLanguageFromStringFn("en", 2);
+            self.backend_ref.hbBufferSetLanguageFn(buffer, language);
+            self.backend_ref.hbBufferGuessSegmentPropertiesFn(buffer);
+
+            self.backend_ref.hbShapeFn(self.backend_ref.harfbuzz_font, buffer, null, 0);
+            const buffer_length = self.backend_ref.hbBufferGetLengthFn(buffer);
+
+            var position_count: u32 = 0;
+            const position_list: [*]harfbuzz.GlyphPosition = self.backend_ref.hbBufferGetGlyphPositionsFn(buffer, &position_count);
+            std.debug.assert(position_count > 0);
+
+            var max_descent: f64 = 0;
+            var max_height: f64 = 0;
+
+            var rendered_text_width: f64 = 0;
+            var i: usize = 0;
+            while (i < buffer_length) : (i += 1) {
+                rendered_text_width += (@intToFloat(f64, position_list[i].x_advance) / 64.0);
+
+                const codepoint = codepoints[i];
+                const glyph_index: u32 = self.backend_ref.getCharIndexFn(self.backend_ref.face, codepoint);
+                std.debug.assert(glyph_index != 0);
+
+                if (self.backend_ref.loadGlyphFn(self.backend_ref.face, glyph_index, .{}) != 0) {
+                    std.log.warn("Failed to load '{c}'", .{codepoint});
+                    continue;
+                }
+
+                const glyph = self.backend_ref.face.glyph;
+                const height_above_baseline = @intToFloat(f64, glyph.metrics.hori_bearing_y) / 64;
+                const total_height = @intToFloat(f64, glyph.metrics.height) / 64;
+                const descent = total_height - height_above_baseline;
+
+                max_descent = @max(max_descent, descent);
+                max_height = @max(max_height, height_above_baseline);
+            }
+
+            return geometry.Dimensions2D(f32) {
+                .width = @floatCast(f32, rendered_text_width),
+                .height = @floatCast(f32, max_descent + max_height),
+            };
+        }
+
         //
         // Private Interface
         //
