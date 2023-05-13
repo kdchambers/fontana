@@ -1490,7 +1490,7 @@ pub fn rasterizeGlyphAlloc(
     const pixel_count = @intCast(usize, dimensions.width) * dimensions.height;
     const pixels = try allocator.alloc(graphics.RGBA(f32), pixel_count);
     bitmap.pixels = pixels.ptr;
-    std.mem.set(graphics.RGBA(f32), pixels, .{ .r = 0.0, .g = 0.0, .b = 0.0, .a = 0.0 });
+    @memset(pixels, graphics.RGBA(f32){ .r = 0.0, .g = 0.0, .b = 0.0, .a = 0.0 });
     var pixel_writer = rasterizer.SubTexturePixelWriter(graphics.RGBA(f32)){
         .texture_width = dimensions.width,
         .write_extent = .{
