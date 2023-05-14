@@ -480,8 +480,8 @@ pub fn FontConfig(comptime options: api.FontOptions) type {
         }
 
         pub inline fn init(self: *@This(), bytes: []const u8) !void {
-            var freetype_handle = DynLib.open("libfreetype.so") catch return error.LinkFreetypeFailed;
-            var harfbuzz_handle = DynLib.open("libharfbuzz.so") catch return error.LinkHarfbuzzFailed;
+            var freetype_handle = DynLib.open("libfreetype.so.6") catch return error.LinkFreetypeFailed;
+            var harfbuzz_handle = DynLib.open("libharfbuzz.so.0") catch return error.LinkHarfbuzzFailed;
 
             self.initFn = freetype_handle.lookup(InitFn, "FT_Init_FreeType") orelse return error.LookupFailed;
             self.doneFn = freetype_handle.lookup(DoneFn, "FT_Done_FreeType") orelse return error.LookupFailed;
