@@ -336,7 +336,7 @@ pub fn PenConfigInternal(comptime options: api.PenConfigOptionsInternal) type {
             }
         }
 
-        pub fn calculateRenderDimensions(self: *@This(), codepoints: []const u8) geometry.Dimensions2D(f32) {
+        pub fn calculateRenderDimensions(self: *@This(), codepoints: []const u8) types.Dimensions2DNative {
             _ = self.backend_ref.setCharSizeFn(
                 self.backend_ref.face,
                 0,
@@ -389,7 +389,7 @@ pub fn PenConfigInternal(comptime options: api.PenConfigOptionsInternal) type {
                 max_height = @max(max_height, height_above_baseline);
             }
 
-            return geometry.Dimensions2D(f32){
+            return .{
                 .width = @floatCast(f32, rendered_text_width),
                 .height = @floatCast(f32, max_descent + max_height),
             };
@@ -432,6 +432,7 @@ pub fn FontConfig(comptime options: api.FontOptions) type {
                     .Extent2DPixel = options.type_overrides.Extent2DPixel,
                     .Extent2DNative = options.type_overrides.Extent2DNative,
                     .Coordinates2DNative = options.type_overrides.Coordinates2DNative,
+                    .Dimensions2DNative = options.type_overrides.Dimensions2DNative,
                     .Scale2D = options.type_overrides.Scale2D,
                     .Pixel = PixelType,
                 },

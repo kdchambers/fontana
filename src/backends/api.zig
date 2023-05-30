@@ -13,6 +13,7 @@ pub const OverridableTypes = struct {
     Coordinates2DNative: type = geometry.Coordinates2D(f32),
     // horizontal, vertical scaler value to convert pixel to screen units
     Scale2D: type = geometry.Scale2D(f64),
+    Dimensions2DNative: type = geometry.Dimensions2D(f32),
 };
 
 pub const FontOptions = struct {
@@ -42,6 +43,7 @@ pub const PenConfigOptionsInternal = struct {
         Coordinates2DNative: type,
         Scale2D: type,
         Pixel: type,
+        Dimensions2DNative: type,
     };
     BackendType: type,
     type_overrides: Types,
