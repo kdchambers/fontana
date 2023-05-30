@@ -253,7 +253,8 @@ pub fn PenConfigInternal(comptime options: api.PenConfigOptionsInternal) type {
                         .width = @floatCast(f32, @intToFloat(f64, glyph_texture_extent.width) * screen_scale.horizontal),
                         .height = @floatCast(f32, @intToFloat(f64, glyph_texture_extent.height) * screen_scale.vertical),
                     };
-                    try writer_interface.write(screen_extent, texture_extent);
+                    const x_correction = writer_interface.write(screen_extent, texture_extent);
+                    cursor.x += x_correction;
                 }
                 cursor.x += @floatCast(f32, x_advance * screen_scale.horizontal);
                 cursor.y += @floatCast(f32, y_advance * screen_scale.vertical);
@@ -329,7 +330,7 @@ pub fn PenConfigInternal(comptime options: api.PenConfigOptionsInternal) type {
                         .width = @floatCast(f32, @intToFloat(f64, glyph_texture_extent.width) * screen_scale.horizontal),
                         .height = @floatCast(f32, @intToFloat(f64, glyph_texture_extent.height) * screen_scale.vertical),
                     };
-                    try writer_interface.write(screen_extent, texture_extent);
+                    _ = writer_interface.write(screen_extent, texture_extent);
                 }
                 cursor.x += @floatCast(f32, x_advance * screen_scale.horizontal);
                 cursor.y += @floatCast(f32, y_advance * screen_scale.vertical);
