@@ -267,7 +267,7 @@ pub fn PenConfigInternal(comptime options: api.PenConfigOptionsInternal) type {
             placement: types.Coordinates2DNative,
             screen_scale: types.Scale2D,
             writer_interface: anytype,
-        ) !void {
+        ) !types.Extent2DNative {
             _ = self.backend_ref.setCharSizeFn(
                 self.backend_ref.face,
                 0,
@@ -290,8 +290,10 @@ pub fn PenConfigInternal(comptime options: api.PenConfigOptionsInternal) type {
             var position_count: u32 = 0;
             const position_list: [*]harfbuzz.GlyphPosition = self.backend_ref.hbBufferGetGlyphPositionsFn(buffer, &position_count);
             std.debug.assert(position_count > 0);
+
+            var max_descent: f64 = 0;
+            var max_height: f64 = 0;
             var cursor = placement;
-            const texture_width_height: f32 = @intToFloat(f32, self.atlas_ref.size);
             var i: usize = 0;
             while (i < buffer_length) : (i += 1) {
                 const codepoint = codepoints[i];
@@ -309,6 +311,13 @@ pub fn PenConfigInternal(comptime options: api.PenConfigOptionsInternal) type {
 
                 const glyph = self.backend_ref.face.glyph;
                 const leftside_bearing = @floatCast(f32, (@intToFloat(f32, glyph.metrics.hori_bearing_x) / 64) * screen_scale.horizontal);
+
+                const height_above_baseline = @intToFloat(f64, glyph.metrics.hori_bearing_y) / 64;
+                const total_height = @intToFloat(f64, glyph.metrics.height) / 64;
+
+                max_descent = @max(max_descent, total_height - height_above_baseline);
+                max_height = @max(max_height, height_above_baseline);
+
                 // std.log.info("cp {c} x_advance: {d}, x_offset: {d} lsb: {d}", .{
                 //     codepoint,
                 //     x_advance,
@@ -319,10 +328,10 @@ pub fn PenConfigInternal(comptime options: api.PenConfigOptionsInternal) type {
                 if (codepoint != ' ') {
                     const glyph_texture_extent = self.textureExtentFromCodepoint(codepoint);
                     const texture_extent = types.Extent2DNative{
-                        .x = @intToFloat(f32, glyph_texture_extent.x) / texture_width_height,
-                        .y = @intToFloat(f32, glyph_texture_extent.y) / texture_width_height,
-                        .width = @intToFloat(f32, glyph_texture_extent.width) / texture_width_height,
-                        .height = @intToFloat(f32, glyph_texture_extent.height) / texture_width_height,
+                        .x = @intToFloat(f32, glyph_texture_extent.x),
+                        .y = @intToFloat(f32, glyph_texture_extent.y),
+                        .width = @intToFloat(f32, glyph_texture_extent.width),
+                        .height = @intToFloat(f32, glyph_texture_extent.height),
                     };
                     const screen_extent = types.Extent2DNative{
                         .x = @floatCast(f32, cursor.x + (x_offset * screen_scale.horizontal)) + leftside_bearing,
@@ -330,11 +339,18 @@ pub fn PenConfigInternal(comptime options: api.PenConfigOptionsInternal) type {
                         .width = @floatCast(f32, @intToFloat(f64, glyph_texture_extent.width) * screen_scale.horizontal),
                         .height = @floatCast(f32, @intToFloat(f64, glyph_texture_extent.height) * screen_scale.vertical),
                     };
-                    _ = writer_interface.write(screen_extent, texture_extent);
+                    const x_correction = writer_interface.write(screen_extent, texture_extent);
+                    cursor.x += x_correction;
                 }
                 cursor.x += @floatCast(f32, x_advance * screen_scale.horizontal);
                 cursor.y += @floatCast(f32, y_advance * screen_scale.vertical);
             }
+            return .{
+                .x = placement.x,
+                .y = placement.y,
+                .width = cursor.x - placement.x,
+                .height = @floatCast(f32, max_descent + max_height) * screen_scale.vertical,
+            };
         }
 
         pub fn calculateRenderDimensions(self: *@This(), codepoints: []const u8) types.Dimensions2DNative {
