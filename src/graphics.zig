@@ -5,9 +5,9 @@ pub fn RGB(comptime BaseType: type) type {
     return extern struct {
         pub fn fromInt(r: u8, g: u8, b: u8) @This() {
             return .{
-                .r = @intToFloat(BaseType, r) / 255.0,
-                .g = @intToFloat(BaseType, g) / 255.0,
-                .b = @intToFloat(BaseType, b) / 255.0,
+                .r = @floatFromInt(BaseType, r) / 255.0,
+                .g = @floatFromInt(BaseType, g) / 255.0,
+                .b = @floatFromInt(BaseType, b) / 255.0,
             };
         }
 
@@ -38,10 +38,10 @@ pub fn RGBA(comptime BaseType: type) type {
     return extern struct {
         pub fn fromInt(comptime IntType: type, r: IntType, g: IntType, b: IntType, a: IntType) @This() {
             return .{
-                .r = @intToFloat(BaseType, r) / 255.0,
-                .g = @intToFloat(BaseType, g) / 255.0,
-                .b = @intToFloat(BaseType, b) / 255.0,
-                .a = @intToFloat(BaseType, a) / 255.0,
+                .r = @floatFromInt(BaseType, r) / 255.0,
+                .g = @floatFromInt(BaseType, g) / 255.0,
+                .b = @floatFromInt(BaseType, b) / 255.0,
+                .a = @floatFromInt(BaseType, a) / 255.0,
             };
         }
 

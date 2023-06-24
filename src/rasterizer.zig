@@ -245,7 +245,7 @@ pub const Outline = struct {
 
     pub fn samplePoint(self: @This(), t: f64) Point(f64) {
         const t_floored: f64 = @floor(t);
-        const segment_index = @floatToInt(usize, t_floored);
+        const segment_index = @intFromFloat(usize, t_floored);
         std.debug.assert(segment_index < self.segments.len);
         return self.segments[segment_index].sample(t - t_floored);
     }
@@ -417,7 +417,7 @@ const OutlineSamplerUnbounded = struct {
     t_direction: f32,
 
     pub fn init(self: *@This(), t_end: f64) void {
-        const current_segment = self.segments[@floatToInt(usize, @floor(self.t_start))];
+        const current_segment = self.segments[@intFromFloat(usize, @floor(self.t_start))];
         const t_per_pixel = current_segment.t_per_pixel;
         self.t_direction = blk: {
             if (self.t_start < t_end) {
@@ -443,14 +443,14 @@ const OutlineSamplerUnbounded = struct {
     }
 
     pub inline fn nextSample(self: *@This(), origin: Point(f64)) Point(f64) {
-        const old_segment_index = @floatToInt(usize, @floor(self.t_current));
+        const old_segment_index = @intFromFloat(usize, @floor(self.t_current));
         const old_segment = self.segments[old_segment_index];
 
         self.t_current = @mod(self.t_current + self.t_increment + self.t_max, self.t_max);
         std.debug.assert(self.t_current >= 0.0);
         std.debug.assert(self.t_current <= self.t_max);
         const t_current_floored = @floor(self.t_current);
-        const segment_index = @floatToInt(usize, t_current_floored);
+        const segment_index = @intFromFloat(usize, t_current_floored);
         const current_segment = self.segments[segment_index];
         if (segment_index != old_segment_index) {
             //
@@ -524,13 +524,13 @@ pub fn rasterize(
     }
 
     const scanline_increment: f64 = 0.5;
-    const scanlines_required = @floatToInt(usize, @divExact(@intToFloat(f64, dimensions.height), scanline_increment));
+    const scanlines_required = @intFromFloat(usize, @divExact(@floatFromInt(f64, dimensions.height), scanline_increment));
     var scanline_i: usize = 0;
     var intersections_upper = try calculateHorizontalLineIntersections(0, outlines);
     while (scanline_i < scanlines_required) : (scanline_i += 1) {
-        const scanline_lower: f64 = @intToFloat(f64, scanline_i + 1) * scanline_increment;
-        const scanline_upper: f64 = @intToFloat(f64, scanline_i) * scanline_increment;
-        const pixel_y: usize = @floatToInt(usize, @floor(scanline_upper));
+        const scanline_lower: f64 = @floatFromInt(f64, scanline_i + 1) * scanline_increment;
+        const scanline_upper: f64 = @floatFromInt(f64, scanline_i) * scanline_increment;
+        const pixel_y: usize = @intFromFloat(usize, @floor(scanline_upper));
 
         var intersections_lower = try calculateHorizontalLineIntersections(scanline_lower, outlines);
         if (intersections_lower.len == 0 and intersections_upper.len == 0) {
@@ -566,7 +566,7 @@ pub fn rasterize(
                     const intersect_right = if (!upper_is_left) upper.start else lower.start;
                     const left_x = intersect_left.x_intersect;
                     const right_x = intersect_right.x_intersect;
-                    const pixel_end = @floatToInt(usize, @floor(right_x));
+                    const pixel_end = @intFromFloat(usize, @floor(right_x));
                     const outline_index = upper.start.outline_index;
                     std.debug.assert(outline_index == lower.start.outline_index);
                     doAntiAliasing(
@@ -590,7 +590,7 @@ pub fn rasterize(
                     const intersect_right = if (!upper_is_left) upper.end else lower.end;
                     const left_x = intersect_left.x_intersect;
                     const right_x = intersect_right.x_intersect;
-                    const pixel_start = @floatToInt(usize, @floor(left_x));
+                    const pixel_start = @intFromFloat(usize, @floor(left_x));
                     const outline_index = upper.end.outline_index;
                     std.debug.assert(outline_index == lower.end.outline_index);
                     doAntiAliasing(
@@ -654,8 +654,8 @@ fn doAntiAliasing(
     const y_high = @max(point_left.y, point_right.y);
     const coverage_weight = y_high - y_low;
 
-    const pixel_start = @floatToInt(usize, @floor(point_left.x));
-    const pixel_end = @floatToInt(usize, @floor(point_right.x));
+    const pixel_start = @intFromFloat(usize, @floor(point_left.x));
+    const pixel_end = @intFromFloat(usize, @floor(point_right.x));
     if (pixel_start == pixel_end) {
         //
         // The upper and lower parts of the initial intersection lie on the same pixel.
@@ -675,7 +675,7 @@ fn doAntiAliasing(
     }
 
     const segments = outline.segments;
-    const sample_t_max = @intToFloat(f64, segments.len);
+    const sample_t_max = @floatFromInt(f64, segments.len);
 
     var sampler = OutlineSamplerUnbounded{
         .segments = segments,
@@ -692,13 +692,13 @@ fn doAntiAliasing(
     var fill_anchor_point = Point(f64){ .x = 1.0, .y = point_left.y };
 
     var previous_point = Point(f64){
-        .x = point_left.x - @intToFloat(f64, pixel_x),
+        .x = point_left.x - @floatFromInt(f64, pixel_x),
         .y = point_left.y,
     };
 
     var origin = Point(f64){
         .x = @floor(point_left.x),
-        .y = @intToFloat(f64, pixel_y),
+        .y = @floatFromInt(f64, pixel_y),
     };
 
     var coverage: f64 = 0.0;
@@ -719,7 +719,7 @@ fn doAntiAliasing(
 
             previous_point = .{ .x = 0.0, .y = interpolated_point.y };
             pixel_x += 1;
-            origin.x = @intToFloat(f64, pixel_x);
+            origin.x = @floatFromInt(f64, pixel_x);
 
             if (sampled_point.y > y_high or sampled_point.y < y_low) {
                 break;
@@ -749,7 +749,7 @@ fn doAntiAliasing(
     }
     const end_point = Point(f64){
         .y = point_right.y,
-        .x = point_right.x - @intToFloat(f64, pixel_end),
+        .x = point_right.x - @floatFromInt(f64, pixel_end),
     };
     assertNormalized(end_point);
 
@@ -781,7 +781,7 @@ fn rasterize2Point(
     var sampler = OutlineSamplerUnbounded{
         .segments = segments,
         .t_start = pair.start.t,
-        .t_max = @intToFloat(f64, segments.len),
+        .t_max = @floatFromInt(f64, segments.len),
         .samples_per_pixel = 3,
         .t_current = undefined,
         .t_direction = undefined,
@@ -790,8 +790,8 @@ fn rasterize2Point(
     sampler.init(pair.end.t);
 
     const coverage_weight = y_high - y_low;
-    const pixel_start = @floatToInt(usize, @floor(pair.start.x_intersect));
-    const pixel_end = @floatToInt(usize, @floor(pair.end.x_intersect));
+    const pixel_start = @intFromFloat(usize, @floor(pair.start.x_intersect));
+    const pixel_end = @intFromFloat(usize, @floor(pair.end.x_intersect));
 
     std.debug.assert(pixel_start <= pixel_end);
     var pixel_x = pixel_start;
@@ -801,14 +801,14 @@ fn rasterize2Point(
         .y = y_intersect,
     };
     var previous_sampled_point = Point(f64){
-        .x = pair.start.x_intersect - @intToFloat(f64, pixel_start),
+        .x = pair.start.x_intersect - @floatFromInt(f64, pixel_start),
         .y = y_intersect,
     };
 
     var coverage: f64 = 0.0;
     var origin = Point(f64){
-        .x = @intToFloat(f64, pixel_start),
-        .y = @intToFloat(f64, y_index),
+        .x = @floatFromInt(f64, pixel_start),
+        .y = @floatFromInt(f64, y_index),
     };
 
     while (true) {
@@ -855,7 +855,7 @@ fn rasterize2Point(
             // Adjust for next pixel
             //
             pixel_x += 1;
-            origin.x = @intToFloat(f64, pixel_x);
+            origin.x = @floatFromInt(f64, pixel_x);
             previous_sampled_point = .{ .x = 0.0, .y = interpolated_point.y };
             fill_anchor_point.x = 0.0;
 
@@ -892,7 +892,7 @@ fn rasterize2Point(
         });
     }
     const end_point = Point(f64){
-        .x = pair.end.x_intersect - @intToFloat(f64, pixel_end),
+        .x = pair.end.x_intersect - @floatFromInt(f64, pixel_end),
         .y = y_intersect,
     };
     assertNormalized(end_point);
@@ -945,7 +945,7 @@ fn combineIntersectionLists(
             if (matched[intersection_i] == true) continue;
             const intersection_outline_index = intersection.outline_index;
             const intersection_outline = outlines[intersection_outline_index];
-            const outline_max_t = @intToFloat(f64, intersection_outline.segments.len);
+            const outline_max_t = @floatFromInt(f64, intersection_outline.segments.len);
             var other_i: usize = intersection_i + 1;
             var smallest_t_diff = std.math.floatMax(f64);
             var best_match_index: ?usize = null;
@@ -1118,7 +1118,7 @@ fn calculateHorizontalLineIntersections(scanline_y: f64, outlines: []Outline) !Y
     var intersection_list = YIntersectionList{ .len = 0, .buffer = undefined };
     for (outlines, 0..) |outline, outline_i| {
         if (!outline.withinYBounds(scanline_y)) continue;
-        const max_t = @intToFloat(f64, outline.segments.len);
+        const max_t = @floatFromInt(f64, outline.segments.len);
         for (outline.segments, 0..) |segment, segment_i| {
             if (!segment.withinYBounds(scanline_y)) continue;
             const point_a = segment.from;
@@ -1132,14 +1132,14 @@ fn calculateHorizontalLineIntersections(scanline_y: f64, outlines: []Outline) !Y
                         const intersection = YIntersection{
                             .outline_index = @intCast(u32, outline_i),
                             .x_intersect = first_intersection.x,
-                            .t = @mod(@intToFloat(f64, segment_i) + first_intersection.t, max_t),
+                            .t = @mod(@floatFromInt(f64, segment_i) + first_intersection.t, max_t),
                         };
                         try intersection_list.add(intersection);
                     }
                     if (optional_intersection_points[1]) |second_intersection| {
                         const x_diff_threshold = 0.001;
                         if (@fabs(second_intersection.x - first_intersection.x) > x_diff_threshold) {
-                            const t_second = @mod(@intToFloat(f64, segment_i) + second_intersection.t, max_t);
+                            const t_second = @mod(@floatFromInt(f64, segment_i) + second_intersection.t, max_t);
                             const intersection = YIntersection{
                                 .outline_index = @intCast(u32, outline_i),
                                 .x_intersect = second_intersection.x,
@@ -1152,7 +1152,7 @@ fn calculateHorizontalLineIntersections(scanline_y: f64, outlines: []Outline) !Y
                     try intersection_list.add(.{
                         .outline_index = @intCast(u32, outline_i),
                         .x_intersect = second_intersection.x,
-                        .t = @mod(@intToFloat(f64, segment_i) + second_intersection.t, max_t),
+                        .t = @mod(@floatFromInt(f64, segment_i) + second_intersection.t, max_t),
                     });
                 }
                 continue;
@@ -1175,7 +1175,7 @@ fn calculateHorizontalLineIntersections(scanline_y: f64, outlines: []Outline) !Y
                 break :blk (scanline_y - point_a.y) / (point_b.y - point_a.y);
             };
             std.debug.assert(interp_t >= 0.0 and interp_t <= 1.0);
-            const t = @mod(@intToFloat(f64, segment_i) + interp_t, max_t);
+            const t = @mod(@floatFromInt(f64, segment_i) + interp_t, max_t);
             if (point_a.x == point_b.x) {
                 try intersection_list.add(.{
                     .outline_index = @intCast(u32, outline_i),
@@ -1201,7 +1201,7 @@ fn calculateHorizontalLineIntersections(scanline_y: f64, outlines: []Outline) !Y
         for (intersection_list.toSlice()) |intersection| {
             std.debug.assert(intersection.outline_index >= 0);
             std.debug.assert(intersection.outline_index < outlines.len);
-            const max_t = @intToFloat(f64, outlines[intersection.outline_index].segments.len);
+            const max_t = @floatFromInt(f64, outlines[intersection.outline_index].segments.len);
             std.debug.assert(intersection.t >= 0.0);
             std.debug.assert(intersection.t < max_t);
         }
@@ -1222,7 +1222,7 @@ fn calculateHorizontalLineIntersections(scanline_y: f64, outlines: []Outline) !Y
         for (intersection_list.buffer[0..intersection_list.len]) |intersection| {
             std.debug.assert(intersection.outline_index >= 0);
             std.debug.assert(intersection.outline_index < outlines.len);
-            const max_t = @intToFloat(f64, outlines[intersection.outline_index].segments.len);
+            const max_t = @floatFromInt(f64, outlines[intersection.outline_index].segments.len);
             std.debug.assert(intersection.t >= 0.0);
             std.debug.assert(intersection.t < max_t);
         }

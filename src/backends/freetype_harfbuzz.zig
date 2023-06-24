@@ -86,8 +86,8 @@ pub fn PenConfigInternal(comptime options: api.PenConfigOptionsInternal) type {
             self.atlas_ref = atlas_ref;
             self.atlas_entries = try allocator.alloc(types.Extent2DPixel, 128);
             self.codepoints = codepoints;
-            self.points_per_pixel = @floatToInt(u32, points_per_pixel);
-            self.size_point = @floatToInt(i32, size_point * 64);
+            self.points_per_pixel = @intFromFloat(u32, points_per_pixel);
+            self.size_point = @intFromFloat(i32, size_point * 64);
             const face = self.backend_ref.face;
             _ = self.backend_ref.setCharSizeFn(
                 self.backend_ref.face,
@@ -182,7 +182,7 @@ pub fn PenConfigInternal(comptime options: api.PenConfigOptionsInternal) type {
             var rendered_text_width: f64 = 0;
             var i: usize = 0;
             while (i < buffer_length) : (i += 1) {
-                rendered_text_width += (@intToFloat(f64, position_list[i].x_advance) / 64.0) * screen_scale.horizontal;
+                rendered_text_width += (@floatFromInt(f64, position_list[i].x_advance) / 64.0) * screen_scale.horizontal;
 
                 const codepoint = codepoints[i];
                 const glyph_index: u32 = self.backend_ref.getCharIndexFn(self.backend_ref.face, codepoint);
@@ -194,8 +194,8 @@ pub fn PenConfigInternal(comptime options: api.PenConfigOptionsInternal) type {
                 }
 
                 const glyph = self.backend_ref.face.glyph;
-                const height_above_baseline = @intToFloat(f64, glyph.metrics.hori_bearing_y) / 64;
-                const total_height = @intToFloat(f64, glyph.metrics.height) / 64;
+                const height_above_baseline = @floatFromInt(f64, glyph.metrics.hori_bearing_y) / 64;
+                const total_height = @floatFromInt(f64, glyph.metrics.height) / 64;
                 const descent = total_height - height_above_baseline;
 
                 max_descent = @max(max_descent, descent);
@@ -222,10 +222,10 @@ pub fn PenConfigInternal(comptime options: api.PenConfigOptionsInternal) type {
 
             i = 0;
             while (i < buffer_length) : (i += 1) {
-                const x_advance = @intToFloat(f64, position_list[i].x_advance) / 64.0;
-                const y_advance = @intToFloat(f64, position_list[i].y_advance) / 64.0;
-                const x_offset = @intToFloat(f32, position_list[i].x_offset) / 64.0;
-                const y_offset = @intToFloat(f32, position_list[i].y_offset) / 64.0;
+                const x_advance = @floatFromInt(f64, position_list[i].x_advance) / 64.0;
+                const y_advance = @floatFromInt(f64, position_list[i].y_advance) / 64.0;
+                const x_offset = @floatFromInt(f32, position_list[i].x_offset) / 64.0;
+                const y_offset = @floatFromInt(f32, position_list[i].y_offset) / 64.0;
 
                 const codepoint = codepoints[i];
                 const glyph_index: u32 = self.backend_ref.getCharIndexFn(self.backend_ref.face, codepoint);
@@ -237,21 +237,21 @@ pub fn PenConfigInternal(comptime options: api.PenConfigOptionsInternal) type {
                 }
 
                 const glyph = self.backend_ref.face.glyph;
-                const descent = (@intToFloat(f64, glyph.metrics.height - glyph.metrics.hori_bearing_y) / 64);
-                const leftside_bearing = @floatCast(f32, (@intToFloat(f32, glyph.metrics.hori_bearing_x) / 64) * screen_scale.horizontal);
+                const descent = (@floatFromInt(f64, glyph.metrics.height - glyph.metrics.hori_bearing_y) / 64);
+                const leftside_bearing = @floatCast(f32, (@floatFromInt(f32, glyph.metrics.hori_bearing_x) / 64) * screen_scale.horizontal);
                 if (codepoint != ' ') {
                     const glyph_texture_extent = self.textureExtentFromCodepoint(codepoint);
                     const texture_extent = types.Extent2DNative{
-                        .x = @intToFloat(f32, glyph_texture_extent.x),
-                        .y = @intToFloat(f32, glyph_texture_extent.y),
-                        .width = @intToFloat(f32, glyph_texture_extent.width),
-                        .height = @intToFloat(f32, glyph_texture_extent.height),
+                        .x = @floatFromInt(f32, glyph_texture_extent.x),
+                        .y = @floatFromInt(f32, glyph_texture_extent.y),
+                        .width = @floatFromInt(f32, glyph_texture_extent.width),
+                        .height = @floatFromInt(f32, glyph_texture_extent.height),
                     };
                     const screen_extent = types.Extent2DNative{
                         .x = @floatCast(f32, margin_horizontal + cursor.x + (x_offset * screen_scale.horizontal)) + leftside_bearing,
                         .y = @floatCast(f32, margin_vertical + cursor.y + ((y_offset + descent) * screen_scale.vertical)),
-                        .width = @floatCast(f32, @intToFloat(f64, glyph_texture_extent.width) * screen_scale.horizontal),
-                        .height = @floatCast(f32, @intToFloat(f64, glyph_texture_extent.height) * screen_scale.vertical),
+                        .width = @floatCast(f32, @floatFromInt(f64, glyph_texture_extent.width) * screen_scale.horizontal),
+                        .height = @floatCast(f32, @floatFromInt(f64, glyph_texture_extent.height) * screen_scale.vertical),
                     };
                     const x_correction = writer_interface.write(screen_extent, texture_extent);
                     cursor.x += x_correction;
@@ -297,10 +297,10 @@ pub fn PenConfigInternal(comptime options: api.PenConfigOptionsInternal) type {
             var i: usize = 0;
             while (i < buffer_length) : (i += 1) {
                 const codepoint = codepoints[i];
-                const x_advance = @intToFloat(f64, position_list[i].x_advance) / 64.0;
-                const y_advance = @intToFloat(f64, position_list[i].y_advance) / 64.0;
-                const x_offset = @intToFloat(f32, position_list[i].x_offset) / 64.0;
-                const y_offset = @intToFloat(f32, position_list[i].y_offset) / 64.0;
+                const x_advance = @floatFromInt(f64, position_list[i].x_advance) / 64.0;
+                const y_advance = @floatFromInt(f64, position_list[i].y_advance) / 64.0;
+                const x_offset = @floatFromInt(f32, position_list[i].x_offset) / 64.0;
+                const y_offset = @floatFromInt(f32, position_list[i].y_offset) / 64.0;
                 const glyph_index: u32 = self.backend_ref.getCharIndexFn(self.backend_ref.face, codepoint);
                 std.debug.assert(glyph_index != 0);
 
@@ -310,10 +310,10 @@ pub fn PenConfigInternal(comptime options: api.PenConfigOptionsInternal) type {
                 }
 
                 const glyph = self.backend_ref.face.glyph;
-                const leftside_bearing = @floatCast(f32, (@intToFloat(f32, glyph.metrics.hori_bearing_x) / 64) * screen_scale.horizontal);
+                const leftside_bearing = @floatCast(f32, (@floatFromInt(f32, glyph.metrics.hori_bearing_x) / 64) * screen_scale.horizontal);
 
-                const height_above_baseline = @intToFloat(f64, glyph.metrics.hori_bearing_y) / 64;
-                const total_height = @intToFloat(f64, glyph.metrics.height) / 64;
+                const height_above_baseline = @floatFromInt(f64, glyph.metrics.hori_bearing_y) / 64;
+                const total_height = @floatFromInt(f64, glyph.metrics.height) / 64;
 
                 max_descent = @max(max_descent, total_height - height_above_baseline);
                 max_height = @max(max_height, height_above_baseline);
@@ -324,20 +324,20 @@ pub fn PenConfigInternal(comptime options: api.PenConfigOptionsInternal) type {
                 //     x_offset,
                 //     leftside_bearing,
                 // });
-                const descent = (@intToFloat(f64, glyph.metrics.height - glyph.metrics.hori_bearing_y) / 64);
+                const descent = (@floatFromInt(f64, glyph.metrics.height - glyph.metrics.hori_bearing_y) / 64);
                 if (codepoint != ' ') {
                     const glyph_texture_extent = self.textureExtentFromCodepoint(codepoint);
                     const texture_extent = types.Extent2DNative{
-                        .x = @intToFloat(f32, glyph_texture_extent.x),
-                        .y = @intToFloat(f32, glyph_texture_extent.y),
-                        .width = @intToFloat(f32, glyph_texture_extent.width),
-                        .height = @intToFloat(f32, glyph_texture_extent.height),
+                        .x = @floatFromInt(f32, glyph_texture_extent.x),
+                        .y = @floatFromInt(f32, glyph_texture_extent.y),
+                        .width = @floatFromInt(f32, glyph_texture_extent.width),
+                        .height = @floatFromInt(f32, glyph_texture_extent.height),
                     };
                     const screen_extent = types.Extent2DNative{
                         .x = @floatCast(f32, cursor.x + (x_offset * screen_scale.horizontal)) + leftside_bearing,
                         .y = @floatCast(f32, cursor.y + ((y_offset + descent) * screen_scale.vertical)),
-                        .width = @floatCast(f32, @intToFloat(f64, glyph_texture_extent.width) * screen_scale.horizontal),
-                        .height = @floatCast(f32, @intToFloat(f64, glyph_texture_extent.height) * screen_scale.vertical),
+                        .width = @floatCast(f32, @floatFromInt(f64, glyph_texture_extent.width) * screen_scale.horizontal),
+                        .height = @floatCast(f32, @floatFromInt(f64, glyph_texture_extent.height) * screen_scale.vertical),
                     };
                     const x_correction = writer_interface.write(screen_extent, texture_extent);
                     cursor.x += x_correction;
@@ -386,7 +386,7 @@ pub fn PenConfigInternal(comptime options: api.PenConfigOptionsInternal) type {
             var rendered_text_width: f64 = 0;
             var i: usize = 0;
             while (i < buffer_length) : (i += 1) {
-                rendered_text_width += (@intToFloat(f64, position_list[i].x_advance) / 64.0);
+                rendered_text_width += (@floatFromInt(f64, position_list[i].x_advance) / 64.0);
 
                 const codepoint = codepoints[i];
                 const glyph_index: u32 = self.backend_ref.getCharIndexFn(self.backend_ref.face, codepoint);
@@ -398,8 +398,8 @@ pub fn PenConfigInternal(comptime options: api.PenConfigOptionsInternal) type {
                 }
 
                 const glyph = self.backend_ref.face.glyph;
-                const height_above_baseline = @intToFloat(f64, glyph.metrics.hori_bearing_y) / 64;
-                const total_height = @intToFloat(f64, glyph.metrics.height) / 64;
+                const height_above_baseline = @floatFromInt(f64, glyph.metrics.hori_bearing_y) / 64;
+                const total_height = @floatFromInt(f64, glyph.metrics.height) / 64;
                 const descent = total_height - height_above_baseline;
 
                 max_descent = @max(max_descent, descent);

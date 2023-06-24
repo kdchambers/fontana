@@ -84,7 +84,7 @@ pub fn PenConfigInternal(comptime options: api.PenConfigOptionsInternal) type {
             writer_interface: anytype,
         ) !void {
             var cursor = placement;
-            const texture_width_height: f32 = @intToFloat(f32, self.atlas.size);
+            const texture_width_height: f32 = @floatFromInt(f32, self.atlas.size);
             var i: usize = 0;
             var right_codepoint_opt: ?u8 = null;
             while (i < codepoints.len) : (i += 1) {
@@ -96,17 +96,17 @@ pub fn PenConfigInternal(comptime options: api.PenConfigOptionsInternal) type {
                 const glyph_metrics = self.font.glyphMetricsFromCodepoint(codepoint);
                 const glyph_texture_extent = self.textureExtentFromCodepoint(codepoint);
                 const texture_extent = types.Extent2DNative{
-                    .x = @intToFloat(f32, glyph_texture_extent.x) / texture_width_height,
-                    .y = @intToFloat(f32, glyph_texture_extent.y) / texture_width_height,
-                    .width = @intToFloat(f32, glyph_texture_extent.width) / texture_width_height,
-                    .height = @intToFloat(f32, glyph_texture_extent.height) / texture_width_height,
+                    .x = @floatFromInt(f32, glyph_texture_extent.x) / texture_width_height,
+                    .y = @floatFromInt(f32, glyph_texture_extent.y) / texture_width_height,
+                    .width = @floatFromInt(f32, glyph_texture_extent.width) / texture_width_height,
+                    .height = @floatFromInt(f32, glyph_texture_extent.height) / texture_width_height,
                 };
 
                 const screen_extent = types.Extent2DNative{
                     .x = @floatCast(f32, cursor.x + (glyph_metrics.leftside_bearing * screen_scale.horizontal)),
                     .y = @floatCast(f32, cursor.y + (@floatCast(f32, glyph_metrics.descent) * screen_scale.vertical)),
-                    .width = @floatCast(f32, @intToFloat(f64, glyph_texture_extent.width) * screen_scale.horizontal),
-                    .height = @floatCast(f32, @intToFloat(f64, glyph_texture_extent.height) * screen_scale.vertical),
+                    .width = @floatCast(f32, @floatFromInt(f64, glyph_texture_extent.width) * screen_scale.horizontal),
+                    .height = @floatCast(f32, @floatFromInt(f64, glyph_texture_extent.height) * screen_scale.vertical),
                 };
                 try writer_interface.write(screen_extent, texture_extent);
                 const advance_x: f64 = blk: {
@@ -126,7 +126,7 @@ pub fn PenConfigInternal(comptime options: api.PenConfigOptionsInternal) type {
             screen_scale: types.Scale2D,
             writer_interface: anytype,
         ) !void {
-            const texture_width_height: f32 = @intToFloat(f32, self.atlas_ref.size);
+            const texture_width_height: f32 = @floatFromInt(f32, self.atlas_ref.size);
             var i: usize = 0;
             var right_codepoint_opt: ?u8 = null;
             var descent_max: f64 = 0;
@@ -155,7 +155,7 @@ pub fn PenConfigInternal(comptime options: api.PenConfigOptionsInternal) type {
             //
             const width_overshoot = blk: {
                 const last_codepoint = codepoints[codepoints.len - 1];
-                const glyph_width_pixels = @intToFloat(f32, self.textureExtentFromCodepoint(last_codepoint).width);
+                const glyph_width_pixels = @floatFromInt(f32, self.textureExtentFromCodepoint(last_codepoint).width);
                 const advance_x = self.glyphMetricsFromCodepoint(last_codepoint).advance_x;
                 std.debug.assert(advance_x >= glyph_width_pixels);
                 break :blk advance_x - glyph_width_pixels;
@@ -187,17 +187,17 @@ pub fn PenConfigInternal(comptime options: api.PenConfigOptionsInternal) type {
                 const glyph_metrics = self.glyphMetricsFromCodepoint(codepoint);
                 const glyph_texture_extent = self.textureExtentFromCodepoint(codepoint);
                 const texture_extent = types.Extent2DNative{
-                    .x = @intToFloat(f32, glyph_texture_extent.x) / texture_width_height,
-                    .y = @intToFloat(f32, glyph_texture_extent.y) / texture_width_height,
-                    .width = @intToFloat(f32, glyph_texture_extent.width) / texture_width_height,
-                    .height = @intToFloat(f32, glyph_texture_extent.height) / texture_width_height,
+                    .x = @floatFromInt(f32, glyph_texture_extent.x) / texture_width_height,
+                    .y = @floatFromInt(f32, glyph_texture_extent.y) / texture_width_height,
+                    .width = @floatFromInt(f32, glyph_texture_extent.width) / texture_width_height,
+                    .height = @floatFromInt(f32, glyph_texture_extent.height) / texture_width_height,
                 };
 
                 const screen_extent = types.Extent2DNative{
                     .x = @floatCast(f32, cursor.x),
                     .y = @floatCast(f32, cursor.y + (@floatCast(f32, glyph_metrics.descent) * screen_scale.vertical)),
-                    .width = @floatCast(f32, @intToFloat(f64, glyph_texture_extent.width) * screen_scale.horizontal),
-                    .height = @floatCast(f32, @intToFloat(f64, glyph_texture_extent.height) * screen_scale.vertical),
+                    .width = @floatCast(f32, @floatFromInt(f64, glyph_texture_extent.width) * screen_scale.horizontal),
+                    .height = @floatCast(f32, @floatFromInt(f64, glyph_texture_extent.height) * screen_scale.vertical),
                 };
                 try writer_interface.write(screen_extent, texture_extent);
                 const advance_x: f64 = blk: {
@@ -218,18 +218,18 @@ pub fn PenConfigInternal(comptime options: api.PenConfigOptionsInternal) type {
             const glyph_index = otf.findGlyphIndex(self.backend_ref, codepoint);
             var metrics: ScaledGlyphMetric = undefined;
             const bounding_box = otf.calculateGlyphBoundingBox(self.backend_ref, glyph_index) catch unreachable;
-            metrics.height = @intToFloat(f64, bounding_box.y1 - bounding_box.y0) * self.font_scale;
+            metrics.height = @floatFromInt(f64, bounding_box.y1 - bounding_box.y0) * self.font_scale;
             std.debug.assert(metrics.height >= 0);
-            metrics.leftside_bearing = @intToFloat(f64, otf.leftBearingForGlyph(self.backend_ref, glyph_index)) * self.font_scale;
-            metrics.advance_x = @intToFloat(f64, otf.advanceXForGlyph(self.backend_ref, glyph_index)) * self.font_scale;
-            metrics.descent = -@intToFloat(f64, bounding_box.y0) * self.font_scale;
+            metrics.leftside_bearing = @floatFromInt(f64, otf.leftBearingForGlyph(self.backend_ref, glyph_index)) * self.font_scale;
+            metrics.advance_x = @floatFromInt(f64, otf.advanceXForGlyph(self.backend_ref, glyph_index)) * self.font_scale;
+            metrics.descent = -@floatFromInt(f64, bounding_box.y0) * self.font_scale;
             return metrics;
         }
 
         inline fn kernPairAdvance(self: *@This(), left_codepoint: u8, right_codepoint: u8) ?f64 {
             const unscaled_opt = otf.kernAdvanceGpos(self.backend_ref, left_codepoint, right_codepoint) catch unreachable;
             if (unscaled_opt) |unscaled| {
-                return @intToFloat(f64, unscaled) * self.font_scale;
+                return @floatFromInt(f64, unscaled) * self.font_scale;
             }
             return null;
         }

@@ -131,7 +131,7 @@ exe.addPackage(.{
 });
 ```
 
-Fontana is kept in sync with the latest zig release. It was last tested with version **0.11.0-dev.1023**.
+Fontana is kept in sync with the latest zig release. It was last tested with version **0.11.0-dev.3771**.
 
 ## Example
 
