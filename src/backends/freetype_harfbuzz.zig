@@ -86,8 +86,8 @@ pub fn PenConfigInternal(comptime options: api.PenConfigOptionsInternal) type {
             self.atlas_ref = atlas_ref;
             self.atlas_entries = try allocator.alloc(types.Extent2DPixel, 128);
             self.codepoints = codepoints;
-            self.points_per_pixel = @intFromFloat(u32, points_per_pixel);
-            self.size_point = @intFromFloat(i32, size_point * 64);
+            self.points_per_pixel = @as(u32, @intFromFloat(points_per_pixel));
+            self.size_point = @as(i32, @intFromFloat(size_point * 64));
             const face = self.backend_ref.face;
             _ = self.backend_ref.setCharSizeFn(
                 self.backend_ref.face,
@@ -99,7 +99,7 @@ pub fn PenConfigInternal(comptime options: api.PenConfigOptionsInternal) type {
             self.backend_ref.hbFontChanged(self.backend_ref.harfbuzz_font);
 
             for (codepoints, 0..) |codepoint, codepoint_i| {
-                const err_code = self.backend_ref.loadCharFn(face, @intCast(u32, codepoint), .{ .render = true });
+                const err_code = self.backend_ref.loadCharFn(face, @as(u32, @intCast(codepoint)), .{ .render = true });
                 std.debug.assert(err_code == 0);
                 const bitmap = face.glyph.bitmap;
                 const bitmap_height = bitmap.rows;
@@ -162,7 +162,7 @@ pub fn PenConfigInternal(comptime options: api.PenConfigOptionsInternal) type {
             var buffer = self.backend_ref.hbBufferCreateFn();
             defer self.backend_ref.hbBufferDestroyFn(buffer);
 
-            self.backend_ref.hbBufferAddUTF8Fn(buffer, codepoints.ptr, @intCast(i32, codepoints.len), 0, -1);
+            self.backend_ref.hbBufferAddUTF8Fn(buffer, codepoints.ptr, @as(i32, @intCast(codepoints.len)), 0, -1);
             self.backend_ref.hbBufferSetDirectionFn(buffer, .left_to_right);
             self.backend_ref.hbBufferSetScriptFn(buffer, .latin);
             const language = self.backend_ref.hbLanguageFromStringFn("en", 2);
@@ -182,7 +182,7 @@ pub fn PenConfigInternal(comptime options: api.PenConfigOptionsInternal) type {
             var rendered_text_width: f64 = 0;
             var i: usize = 0;
             while (i < buffer_length) : (i += 1) {
-                rendered_text_width += (@floatFromInt(f64, position_list[i].x_advance) / 64.0) * screen_scale.horizontal;
+                rendered_text_width += (@as(f64, @floatFromInt(position_list[i].x_advance)) / 64.0) * screen_scale.horizontal;
 
                 const codepoint = codepoints[i];
                 const glyph_index: u32 = self.backend_ref.getCharIndexFn(self.backend_ref.face, codepoint);
@@ -194,8 +194,8 @@ pub fn PenConfigInternal(comptime options: api.PenConfigOptionsInternal) type {
                 }
 
                 const glyph = self.backend_ref.face.glyph;
-                const height_above_baseline = @floatFromInt(f64, glyph.metrics.hori_bearing_y) / 64;
-                const total_height = @floatFromInt(f64, glyph.metrics.height) / 64;
+                const height_above_baseline = @as(f64, @floatFromInt(glyph.metrics.hori_bearing_y)) / 64;
+                const total_height = @as(f64, @floatFromInt(glyph.metrics.height)) / 64;
                 const descent = total_height - height_above_baseline;
 
                 max_descent = @max(max_descent, descent);
@@ -222,10 +222,10 @@ pub fn PenConfigInternal(comptime options: api.PenConfigOptionsInternal) type {
 
             i = 0;
             while (i < buffer_length) : (i += 1) {
-                const x_advance = @floatFromInt(f64, position_list[i].x_advance) / 64.0;
-                const y_advance = @floatFromInt(f64, position_list[i].y_advance) / 64.0;
-                const x_offset = @floatFromInt(f32, position_list[i].x_offset) / 64.0;
-                const y_offset = @floatFromInt(f32, position_list[i].y_offset) / 64.0;
+                const x_advance = @as(f64, @floatFromInt(position_list[i].x_advance)) / 64.0;
+                const y_advance = @as(f64, @floatFromInt(position_list[i].y_advance)) / 64.0;
+                const x_offset = @as(f32, @floatFromInt(position_list[i].x_offset)) / 64.0;
+                const y_offset = @as(f32, @floatFromInt(position_list[i].y_offset)) / 64.0;
 
                 const codepoint = codepoints[i];
                 const glyph_index: u32 = self.backend_ref.getCharIndexFn(self.backend_ref.face, codepoint);
@@ -237,27 +237,27 @@ pub fn PenConfigInternal(comptime options: api.PenConfigOptionsInternal) type {
                 }
 
                 const glyph = self.backend_ref.face.glyph;
-                const descent = (@floatFromInt(f64, glyph.metrics.height - glyph.metrics.hori_bearing_y) / 64);
-                const leftside_bearing = @floatCast(f32, (@floatFromInt(f32, glyph.metrics.hori_bearing_x) / 64) * screen_scale.horizontal);
+                const descent = (@as(f64, @floatFromInt(glyph.metrics.height - glyph.metrics.hori_bearing_y)) / 64);
+                const leftside_bearing = @as(f32, @floatCast((@as(f32, @floatFromInt(glyph.metrics.hori_bearing_x)) / 64) * screen_scale.horizontal));
                 if (codepoint != ' ') {
                     const glyph_texture_extent = self.textureExtentFromCodepoint(codepoint);
                     const texture_extent = types.Extent2DNative{
-                        .x = @floatFromInt(f32, glyph_texture_extent.x),
-                        .y = @floatFromInt(f32, glyph_texture_extent.y),
-                        .width = @floatFromInt(f32, glyph_texture_extent.width),
-                        .height = @floatFromInt(f32, glyph_texture_extent.height),
+                        .x = @as(f32, @floatFromInt(glyph_texture_extent.x)),
+                        .y = @as(f32, @floatFromInt(glyph_texture_extent.y)),
+                        .width = @as(f32, @floatFromInt(glyph_texture_extent.width)),
+                        .height = @as(f32, @floatFromInt(glyph_texture_extent.height)),
                     };
                     const screen_extent = types.Extent2DNative{
-                        .x = @floatCast(f32, margin_horizontal + cursor.x + (x_offset * screen_scale.horizontal)) + leftside_bearing,
-                        .y = @floatCast(f32, margin_vertical + cursor.y + ((y_offset + descent) * screen_scale.vertical)),
-                        .width = @floatCast(f32, @floatFromInt(f64, glyph_texture_extent.width) * screen_scale.horizontal),
-                        .height = @floatCast(f32, @floatFromInt(f64, glyph_texture_extent.height) * screen_scale.vertical),
+                        .x = @as(f32, @floatCast(margin_horizontal + cursor.x + (x_offset * screen_scale.horizontal))) + leftside_bearing,
+                        .y = @as(f32, @floatCast(margin_vertical + cursor.y + ((y_offset + descent) * screen_scale.vertical))),
+                        .width = @as(f32, @floatCast(@as(f64, @floatFromInt(glyph_texture_extent.width)) * screen_scale.horizontal)),
+                        .height = @as(f32, @floatCast(@as(f64, @floatFromInt(glyph_texture_extent.height)) * screen_scale.vertical)),
                     };
                     const x_correction = writer_interface.write(screen_extent, texture_extent);
                     cursor.x += x_correction;
                 }
-                cursor.x += @floatCast(f32, x_advance * screen_scale.horizontal);
-                cursor.y += @floatCast(f32, y_advance * screen_scale.vertical);
+                cursor.x += @as(f32, @floatCast(x_advance * screen_scale.horizontal));
+                cursor.y += @as(f32, @floatCast(y_advance * screen_scale.vertical));
             }
         }
 
@@ -279,7 +279,7 @@ pub fn PenConfigInternal(comptime options: api.PenConfigOptionsInternal) type {
 
             var buffer = self.backend_ref.hbBufferCreateFn();
             defer self.backend_ref.hbBufferDestroyFn(buffer);
-            self.backend_ref.hbBufferAddUTF8Fn(buffer, codepoints.ptr, @intCast(i32, codepoints.len), 0, -1);
+            self.backend_ref.hbBufferAddUTF8Fn(buffer, codepoints.ptr, @as(i32, @intCast(codepoints.len)), 0, -1);
             self.backend_ref.hbBufferSetDirectionFn(buffer, .left_to_right);
             self.backend_ref.hbBufferSetScriptFn(buffer, .latin);
             const language = self.backend_ref.hbLanguageFromStringFn("en", 2);
@@ -297,10 +297,10 @@ pub fn PenConfigInternal(comptime options: api.PenConfigOptionsInternal) type {
             var i: usize = 0;
             while (i < buffer_length) : (i += 1) {
                 const codepoint = codepoints[i];
-                const x_advance = @floatFromInt(f64, position_list[i].x_advance) / 64.0;
-                const y_advance = @floatFromInt(f64, position_list[i].y_advance) / 64.0;
-                const x_offset = @floatFromInt(f32, position_list[i].x_offset) / 64.0;
-                const y_offset = @floatFromInt(f32, position_list[i].y_offset) / 64.0;
+                const x_advance = @as(f64, @floatFromInt(position_list[i].x_advance)) / 64.0;
+                const y_advance = @as(f64, @floatFromInt(position_list[i].y_advance)) / 64.0;
+                const x_offset = @as(f32, @floatFromInt(position_list[i].x_offset)) / 64.0;
+                const y_offset = @as(f32, @floatFromInt(position_list[i].y_offset)) / 64.0;
                 const glyph_index: u32 = self.backend_ref.getCharIndexFn(self.backend_ref.face, codepoint);
                 std.debug.assert(glyph_index != 0);
 
@@ -310,10 +310,10 @@ pub fn PenConfigInternal(comptime options: api.PenConfigOptionsInternal) type {
                 }
 
                 const glyph = self.backend_ref.face.glyph;
-                const leftside_bearing = @floatCast(f32, (@floatFromInt(f32, glyph.metrics.hori_bearing_x) / 64) * screen_scale.horizontal);
+                const leftside_bearing = @as(f32, @floatCast((@as(f32, @floatFromInt(glyph.metrics.hori_bearing_x)) / 64) * screen_scale.horizontal));
 
-                const height_above_baseline = @floatFromInt(f64, glyph.metrics.hori_bearing_y) / 64;
-                const total_height = @floatFromInt(f64, glyph.metrics.height) / 64;
+                const height_above_baseline = @as(f64, @floatFromInt(glyph.metrics.hori_bearing_y)) / 64;
+                const total_height = @as(f64, @floatFromInt(glyph.metrics.height)) / 64;
 
                 max_descent = @max(max_descent, total_height - height_above_baseline);
                 max_height = @max(max_height, height_above_baseline);
@@ -324,32 +324,32 @@ pub fn PenConfigInternal(comptime options: api.PenConfigOptionsInternal) type {
                 //     x_offset,
                 //     leftside_bearing,
                 // });
-                const descent = (@floatFromInt(f64, glyph.metrics.height - glyph.metrics.hori_bearing_y) / 64);
+                const descent = (@as(f64, @floatFromInt(glyph.metrics.height - glyph.metrics.hori_bearing_y)) / 64);
                 if (codepoint != ' ') {
                     const glyph_texture_extent = self.textureExtentFromCodepoint(codepoint);
                     const texture_extent = types.Extent2DNative{
-                        .x = @floatFromInt(f32, glyph_texture_extent.x),
-                        .y = @floatFromInt(f32, glyph_texture_extent.y),
-                        .width = @floatFromInt(f32, glyph_texture_extent.width),
-                        .height = @floatFromInt(f32, glyph_texture_extent.height),
+                        .x = @as(f32, @floatFromInt(glyph_texture_extent.x)),
+                        .y = @as(f32, @floatFromInt(glyph_texture_extent.y)),
+                        .width = @as(f32, @floatFromInt(glyph_texture_extent.width)),
+                        .height = @as(f32, @floatFromInt(glyph_texture_extent.height)),
                     };
                     const screen_extent = types.Extent2DNative{
-                        .x = @floatCast(f32, cursor.x + (x_offset * screen_scale.horizontal)) + leftside_bearing,
-                        .y = @floatCast(f32, cursor.y + ((y_offset + descent) * screen_scale.vertical)),
-                        .width = @floatCast(f32, @floatFromInt(f64, glyph_texture_extent.width) * screen_scale.horizontal),
-                        .height = @floatCast(f32, @floatFromInt(f64, glyph_texture_extent.height) * screen_scale.vertical),
+                        .x = @as(f32, @floatCast(cursor.x + (x_offset * screen_scale.horizontal))) + leftside_bearing,
+                        .y = @as(f32, @floatCast(cursor.y + ((y_offset + descent) * screen_scale.vertical))),
+                        .width = @as(f32, @floatCast(@as(f64, @floatFromInt(glyph_texture_extent.width)) * screen_scale.horizontal)),
+                        .height = @as(f32, @floatCast(@as(f64, @floatFromInt(glyph_texture_extent.height)) * screen_scale.vertical)),
                     };
                     const x_correction = writer_interface.write(screen_extent, texture_extent);
                     cursor.x += x_correction;
                 }
-                cursor.x += @floatCast(f32, x_advance * screen_scale.horizontal);
-                cursor.y += @floatCast(f32, y_advance * screen_scale.vertical);
+                cursor.x += @as(f32, @floatCast(x_advance * screen_scale.horizontal));
+                cursor.y += @as(f32, @floatCast(y_advance * screen_scale.vertical));
             }
             return .{
                 .x = placement.x,
                 .y = placement.y,
                 .width = cursor.x - placement.x,
-                .height = @floatCast(f32, max_descent + max_height) * screen_scale.vertical,
+                .height = @as(f32, @floatCast(max_descent + max_height)) * screen_scale.vertical,
             };
         }
 
@@ -366,7 +366,7 @@ pub fn PenConfigInternal(comptime options: api.PenConfigOptionsInternal) type {
             var buffer = self.backend_ref.hbBufferCreateFn();
             defer self.backend_ref.hbBufferDestroyFn(buffer);
 
-            self.backend_ref.hbBufferAddUTF8Fn(buffer, codepoints.ptr, @intCast(i32, codepoints.len), 0, -1);
+            self.backend_ref.hbBufferAddUTF8Fn(buffer, codepoints.ptr, @as(i32, @intCast(codepoints.len)), 0, -1);
             self.backend_ref.hbBufferSetDirectionFn(buffer, .left_to_right);
             self.backend_ref.hbBufferSetScriptFn(buffer, .latin);
             const language = self.backend_ref.hbLanguageFromStringFn("en", 2);
@@ -386,7 +386,7 @@ pub fn PenConfigInternal(comptime options: api.PenConfigOptionsInternal) type {
             var rendered_text_width: f64 = 0;
             var i: usize = 0;
             while (i < buffer_length) : (i += 1) {
-                rendered_text_width += (@floatFromInt(f64, position_list[i].x_advance) / 64.0);
+                rendered_text_width += (@as(f64, @floatFromInt(position_list[i].x_advance)) / 64.0);
 
                 const codepoint = codepoints[i];
                 const glyph_index: u32 = self.backend_ref.getCharIndexFn(self.backend_ref.face, codepoint);
@@ -398,8 +398,8 @@ pub fn PenConfigInternal(comptime options: api.PenConfigOptionsInternal) type {
                 }
 
                 const glyph = self.backend_ref.face.glyph;
-                const height_above_baseline = @floatFromInt(f64, glyph.metrics.hori_bearing_y) / 64;
-                const total_height = @floatFromInt(f64, glyph.metrics.height) / 64;
+                const height_above_baseline = @as(f64, @floatFromInt(glyph.metrics.hori_bearing_y)) / 64;
+                const total_height = @as(f64, @floatFromInt(glyph.metrics.height)) / 64;
                 const descent = total_height - height_above_baseline;
 
                 max_descent = @max(max_descent, descent);
@@ -407,8 +407,8 @@ pub fn PenConfigInternal(comptime options: api.PenConfigOptionsInternal) type {
             }
 
             return .{
-                .width = @floatCast(f32, rendered_text_width),
-                .height = @floatCast(f32, max_descent + max_height),
+                .width = @as(f32, @floatCast(rendered_text_width)),
+                .height = @as(f32, @floatCast(max_descent + max_height)),
             };
         }
 

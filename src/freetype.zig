@@ -99,25 +99,25 @@ comptime {
     // #define FT_FACE_FLAG_SBIX              ( 1L << 17 )
     // #define FT_FACE_FLAG_SBIX_OVERLAY      ( 1L << 18 )
     const assert = std.debug.assert;
-    assert(@bitCast(i64, FaceFlags{ .scalable = true }) == 1 << 0);
-    assert(@bitCast(i64, FaceFlags{ .fixed_sizes = true }) == 1 << 1);
-    assert(@bitCast(i64, FaceFlags{ .fixed_width = true }) == 1 << 2);
-    assert(@bitCast(i64, FaceFlags{ .sfnt = true }) == 1 << 3);
-    assert(@bitCast(i64, FaceFlags{ .horizontal = true }) == 1 << 4);
-    assert(@bitCast(i64, FaceFlags{ .vertical = true }) == 1 << 5);
-    assert(@bitCast(i64, FaceFlags{ .kerning = true }) == 1 << 6);
-    assert(@bitCast(i64, FaceFlags{ .fast_glyphs = true }) == 1 << 7);
-    assert(@bitCast(i64, FaceFlags{ .multiple_masters = true }) == 1 << 8);
-    assert(@bitCast(i64, FaceFlags{ .glyph_names = true }) == 1 << 9);
-    assert(@bitCast(i64, FaceFlags{ .external_stream = true }) == 1 << 10);
-    assert(@bitCast(i64, FaceFlags{ .hinter = true }) == 1 << 11);
-    assert(@bitCast(i64, FaceFlags{ .cid_keyed = true }) == 1 << 12);
-    assert(@bitCast(i64, FaceFlags{ .tricky = true }) == 1 << 13);
-    assert(@bitCast(i64, FaceFlags{ .color = true }) == 1 << 14);
-    assert(@bitCast(i64, FaceFlags{ .variation = true }) == 1 << 15);
-    assert(@bitCast(i64, FaceFlags{ .svg = true }) == 1 << 16);
-    assert(@bitCast(i64, FaceFlags{ .sbix = true }) == 1 << 17);
-    assert(@bitCast(i64, FaceFlags{ .sbix_overlay = true }) == 1 << 18);
+    assert(@as(i64, @bitCast(FaceFlags{ .scalable = true })) == 1 << 0);
+    assert(@as(i64, @bitCast(FaceFlags{ .fixed_sizes = true })) == 1 << 1);
+    assert(@as(i64, @bitCast(FaceFlags{ .fixed_width = true })) == 1 << 2);
+    assert(@as(i64, @bitCast(FaceFlags{ .sfnt = true })) == 1 << 3);
+    assert(@as(i64, @bitCast(FaceFlags{ .horizontal = true })) == 1 << 4);
+    assert(@as(i64, @bitCast(FaceFlags{ .vertical = true })) == 1 << 5);
+    assert(@as(i64, @bitCast(FaceFlags{ .kerning = true })) == 1 << 6);
+    assert(@as(i64, @bitCast(FaceFlags{ .fast_glyphs = true })) == 1 << 7);
+    assert(@as(i64, @bitCast(FaceFlags{ .multiple_masters = true })) == 1 << 8);
+    assert(@as(i64, @bitCast(FaceFlags{ .glyph_names = true })) == 1 << 9);
+    assert(@as(i64, @bitCast(FaceFlags{ .external_stream = true })) == 1 << 10);
+    assert(@as(i64, @bitCast(FaceFlags{ .hinter = true })) == 1 << 11);
+    assert(@as(i64, @bitCast(FaceFlags{ .cid_keyed = true })) == 1 << 12);
+    assert(@as(i64, @bitCast(FaceFlags{ .tricky = true })) == 1 << 13);
+    assert(@as(i64, @bitCast(FaceFlags{ .color = true })) == 1 << 14);
+    assert(@as(i64, @bitCast(FaceFlags{ .variation = true })) == 1 << 15);
+    assert(@as(i64, @bitCast(FaceFlags{ .svg = true })) == 1 << 16);
+    assert(@as(i64, @bitCast(FaceFlags{ .sbix = true })) == 1 << 17);
+    assert(@as(i64, @bitCast(FaceFlags{ .sbix_overlay = true })) == 1 << 18);
 }
 
 pub const Vector = extern struct {

@@ -76,8 +76,8 @@ pub fn quadraticBezierPoint(bezier: BezierQuadratic, t: f64) Point(f64) {
     const p1 = bezier.b;
     const control = bezier.control;
     return .{
-        .x = @floatCast(f64, (one_minus_t * one_minus_t) * p0.x + (2 * one_minus_t * t * control.x + (t_squared * p1.x))),
-        .y = @floatCast(f64, (one_minus_t * one_minus_t) * p0.y + (2 * one_minus_t * t * control.y + (t_squared * p1.y))),
+        .x = @as(f64, @floatCast((one_minus_t * one_minus_t) * p0.x + (2 * one_minus_t * t * control.x + (t_squared * p1.x)))),
+        .y = @as(f64, @floatCast((one_minus_t * one_minus_t) * p0.y + (2 * one_minus_t * t * control.y + (t_squared * p1.y)))),
     };
 }
 

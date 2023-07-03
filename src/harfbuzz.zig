@@ -125,9 +125,9 @@ pub const Script = enum(u32) {
 
 pub inline fn makeTag(comptime c: *const [4]u8) u32 {
     var bits: u32 = 0;
-    bits += @intCast(u32, c[0]) << 24;
-    bits += @intCast(u32, c[1]) << 16;
-    bits += @intCast(u32, c[2]) << 8;
-    bits += @intCast(u32, c[3]) << 0;
+    bits += @as(u32, @intCast(c[0])) << 24;
+    bits += @as(u32, @intCast(c[1])) << 16;
+    bits += @as(u32, @intCast(c[2])) << 8;
+    bits += @as(u32, @intCast(c[3])) << 0;
     return bits;
 }

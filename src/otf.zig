@@ -92,7 +92,7 @@ pub const OffsetSubtable = struct {
     range_shift: u16,
 
     pub fn fromBigEndianBytes(bytes: *align(4) [@sizeOf(OffsetSubtable)]u8) @This() {
-        var result = @ptrCast(*OffsetSubtable, bytes).*;
+        var result = @as(*OffsetSubtable, @ptrCast(bytes)).*;
 
         result.scaler_type = toNative(u32, result.scaler_type, .Big);
         result.tables_count = toNative(u16, result.tables_count, .Big);
@@ -116,17 +116,17 @@ pub const TableDirectory = struct {
         var sum: u32 = 0;
         var iteractions_count: u32 = @sizeOf(@This()) / 4;
 
-        var bytes = @ptrCast(*const u32, &self);
+        var bytes = @as(*const u32, @ptrCast(&self));
         while (iteractions_count > 0) : (iteractions_count -= 1) {
             sum = @addWithOverflow(sum, bytes.*).a;
-            bytes = @ptrFromInt(*const u32, @intFromPtr(bytes) + @sizeOf(u32));
+            bytes = @as(*const u32, @ptrFromInt(@intFromPtr(bytes) + @sizeOf(u32)));
         }
         const checksum = self.checksum;
         return (sum == checksum);
     }
 
     pub fn fromBigEndianBytes(bytes: *align(4) [@sizeOf(TableDirectory)]u8) ?TableDirectory {
-        var result: TableDirectory = @ptrCast(*align(4) TableDirectory, bytes).*;
+        var result: TableDirectory = @as(*align(4) TableDirectory, @ptrCast(bytes)).*;
 
         // TODO: Disabled as not working
         // if (!result.isChecksumValid()) {
@@ -254,23 +254,23 @@ pub const CMAPSubtable = extern struct {
     pub fn fromBigEndianBytes(bytes: []u8) ?CMAPSubtable {
         var table: CMAPSubtable = undefined;
 
-        const platform_id_u16 = toNative(u16, @ptrCast(*u16, @alignCast(2, bytes.ptr)).*, .Big);
+        const platform_id_u16 = toNative(u16, @as(*u16, @ptrCast(@alignCast(bytes.ptr))).*, .Big);
 
         if (platform_id_u16 > @intFromEnum(CMAPPlatformID.microsoft)) {
             std.log.warn("Invalid platform ID '{d}' parsed from CMAP subtable", .{platform_id_u16});
             return null;
         }
 
-        table.platform_id = @enumFromInt(CMAPPlatformID, platform_id_u16);
+        table.platform_id = @as(CMAPPlatformID, @enumFromInt(platform_id_u16));
 
-        table.offset = toNative(u32, @ptrCast(*u32, @alignCast(4, &bytes.ptr[4])).*, .Big);
+        table.offset = toNative(u32, @as(*u32, @ptrCast(@alignCast(&bytes.ptr[4]))).*, .Big);
 
-        const platform_specific_id_u16 = toNative(u16, @ptrCast(*u16, @alignCast(2, &bytes.ptr[2])).*, .Big);
+        const platform_specific_id_u16 = toNative(u16, @as(*u16, @ptrCast(@alignCast(&bytes.ptr[2]))).*, .Big);
 
         switch (table.platform_id) {
             .unicode => {
                 if (platform_specific_id_u16 < @intFromEnum(CMAPPlatformSpecificID.Unicode.last_resort)) {
-                    table.platform_specific_id = .{ .unicode = @enumFromInt(CMAPPlatformSpecificID.Unicode, platform_specific_id_u16) };
+                    table.platform_specific_id = .{ .unicode = @as(CMAPPlatformSpecificID.Unicode, @enumFromInt(platform_specific_id_u16)) };
                 } else {
                     table.platform_specific_id = .{ .unicode = .other };
                 }
@@ -430,7 +430,7 @@ fn coverageIndexForGlyphID(coverage: []const u8, target_glyph_id: u16) !?u16 {
             while (i < glyph_count) : (i += 1) {
                 const glyph_id = try reader.readIntBig(u16);
                 if (glyph_id == target_glyph_id) {
-                    return @intCast(u16, i);
+                    return @as(u16, @intCast(i));
                 }
             }
         },
@@ -443,7 +443,7 @@ fn coverageIndexForGlyphID(coverage: []const u8, target_glyph_id: u16) !?u16 {
                 const glyph_end = try reader.readIntBig(u16);
                 const base_coverage_index = try reader.readIntBig(u16);
                 if (target_glyph_id >= glyph_start and target_glyph_id <= glyph_end) {
-                    return @intCast(u16, base_coverage_index + (i - glyph_start));
+                    return @as(u16, @intCast(base_coverage_index + (i - glyph_start)));
                 }
             }
         },
@@ -508,7 +508,7 @@ fn getClassForGlyph(class_table_data: []const u8, glyph_index: u32) !u16 {
             while (x < glyph_count) : (x += 1) {
                 const current_glyph_index = try reader.readIntBig(u16);
                 if (current_glyph_index == glyph_index) {
-                    return @intCast(u16, x);
+                    return @as(u16, @intCast(x));
                 }
             }
         },
@@ -531,7 +531,7 @@ fn getClassForGlyph(class_table_data: []const u8, glyph_index: u32) !u16 {
 
 pub fn loadXAdvances(font: *const FontInfo, codepoints: []const u8, out_advance_list: []u16) void {
     std.debug.assert(!font.hmtx.isNull());
-    const entries = @ptrCast([*]const HorizontalMetric, @alignCast(2, &font.data[font.hmtx.offset]));
+    const entries = @as([*]const HorizontalMetric, @ptrCast(@alignCast(&font.data[font.hmtx.offset])));
     comptime std.debug.assert(@sizeOf(HorizontalMetric) == 4);
     for (codepoints, 0..) |codepoint, codepoint_i| {
         const glyph_index = findGlyphIndex(font, codepoint);
@@ -542,14 +542,14 @@ pub fn loadXAdvances(font: *const FontInfo, codepoints: []const u8, out_advance_
 
 pub fn leftBearingForGlyph(font: *const FontInfo, glyph_index: u32) i16 {
     std.debug.assert(!font.hmtx.isNull());
-    const entries = @ptrCast([*]const HorizontalMetric, @alignCast(2, &font.data[font.hmtx.offset]));
+    const entries = @as([*]const HorizontalMetric, @ptrCast(@alignCast(&font.data[font.hmtx.offset])));
     const index = @min(font.horizonal_metrics_count - 1, glyph_index);
     return std.mem.bigToNative(i16, entries[index].leftside_bearing);
 }
 
 pub fn advanceXForGlyph(font: *const FontInfo, glyph_index: u32) u16 {
     std.debug.assert(!font.hmtx.isNull());
-    const entries = @ptrCast([*]const HorizontalMetric, @alignCast(2, &font.data[font.hmtx.offset]));
+    const entries = @as([*]const HorizontalMetric, @ptrCast(@alignCast(&font.data[font.hmtx.offset])));
     const index = @min(font.horizonal_metrics_count - 1, glyph_index);
     return std.mem.bigToNative(u16, entries[index].advance_width);
 }
@@ -662,7 +662,7 @@ pub fn kernAdvanceGpos(
         const coverage_slice = font.data[coverage_offset_absolute..font.data_len];
         switch (pos_format) {
             1 => {
-                if (try coverageIndexForGlyphID(coverage_slice, @intCast(u16, left_glyph_index))) |coverage_index| {
+                if (try coverageIndexForGlyphID(coverage_slice, @as(u16, @intCast(left_glyph_index)))) |coverage_index| {
                     const value_format_1 = try reader.readIntBig(u16);
                     const value_format_2 = try reader.readIntBig(u16);
                     const pair_set_count = try reader.readIntBig(u16);
@@ -841,7 +841,7 @@ pub fn generateKernPairsFromGpos(
             const coverage_slice = font.data[coverage_offset_absolute..font.data_len];
             switch (pos_format) {
                 1 => {
-                    if (try coverageIndexForGlyphID(coverage_slice, @intCast(u16, left_glyph_index))) |coverage_index| {
+                    if (try coverageIndexForGlyphID(coverage_slice, @as(u16, @intCast(left_glyph_index)))) |coverage_index| {
                         const value_format_1 = try reader.readIntBig(u16);
                         const value_format_2 = try reader.readIntBig(u16);
                         const pair_set_count = try reader.readIntBig(u16);
@@ -1057,7 +1057,7 @@ pub fn parseFromBytes(font_data: []const u8) !FontInfo {
 
     var font_info = FontInfo{
         .data = font_data.ptr,
-        .data_len = @intCast(u32, font_data.len),
+        .data_len = @as(u32, @intCast(font_data.len)),
         .hhea = data_sections.hhea,
         .hmtx = data_sections.hmtx,
         .loca = data_sections.loca,
@@ -1203,10 +1203,10 @@ pub fn parseFromBytes(font_data: []const u8) !FontInfo {
         const space_glyph_index = findGlyphIndex(&font_info, ' ');
         if (space_glyph_index < font_info.horizonal_metrics_count) {
             try reader.skipBytes(space_glyph_index * @sizeOf(u32), .{});
-            font_info.space_advance = @floatFromInt(f32, try reader.readIntBig(u16));
+            font_info.space_advance = @as(f32, @floatFromInt(try reader.readIntBig(u16)));
         } else {
             try reader.skipBytes((font_info.horizonal_metrics_count - 1) * @sizeOf(u32), .{});
-            font_info.space_advance = @floatFromInt(f32, try reader.readIntBig(u16));
+            font_info.space_advance = @as(f32, @floatFromInt(try reader.readIntBig(u16)));
         }
     }
 
@@ -1254,20 +1254,20 @@ pub fn findGlyphIndex(font_info: *const FontInfo, unicode_codepoint: i32) u32 {
     }
 
     const base_index: usize = @intFromPtr(data.ptr) + encoding_offset;
-    const format: u16 = bigToNative(u16, @ptrFromInt(*u16, base_index).*);
+    const format: u16 = bigToNative(u16, @as(*u16, @ptrFromInt(base_index)).*);
 
     // TODO:
     std.debug.assert(format == 4);
 
-    const segcount = toNative(u16, @ptrFromInt(*u16, base_index + 6).*, .Big) >> 1;
-    var search_range = toNative(u16, @ptrFromInt(*u16, base_index + 8).*, .Big) >> 1;
-    var entry_selector = toNative(u16, @ptrFromInt(*u16, base_index + 10).*, .Big);
-    const range_shift = toNative(u16, @ptrFromInt(*u16, base_index + 12).*, .Big) >> 1;
+    const segcount = toNative(u16, @as(*u16, @ptrFromInt(base_index + 6)).*, .Big) >> 1;
+    var search_range = toNative(u16, @as(*u16, @ptrFromInt(base_index + 8)).*, .Big) >> 1;
+    var entry_selector = toNative(u16, @as(*u16, @ptrFromInt(base_index + 10)).*, .Big);
+    const range_shift = toNative(u16, @as(*u16, @ptrFromInt(base_index + 12)).*, .Big) >> 1;
 
     const end_count: u32 = encoding_offset + 14;
     var search: u32 = end_count;
 
-    if (unicode_codepoint >= toNative(u16, @ptrFromInt(*u16, @intFromPtr(data.ptr) + search + (range_shift * 2)).*, .Big)) {
+    if (unicode_codepoint >= toNative(u16, @as(*u16, @ptrFromInt(@intFromPtr(data.ptr) + search + (range_shift * 2))).*, .Big)) {
         search += range_shift * 2;
     }
 
@@ -1277,7 +1277,7 @@ pub fn findGlyphIndex(font_info: *const FontInfo, unicode_codepoint: i32) u32 {
         var end: u16 = undefined;
         search_range = search_range >> 1;
 
-        end = toNative(u16, @ptrFromInt(*u16, @intFromPtr(data.ptr) + search + (search_range * 2)).*, .Big);
+        end = toNative(u16, @as(*u16, @ptrFromInt(@intFromPtr(data.ptr) + search + (search_range * 2))).*, .Big);
 
         if (unicode_codepoint > end) {
             search += search_range * 2;
@@ -1292,8 +1292,8 @@ pub fn findGlyphIndex(font_info: *const FontInfo, unicode_codepoint: i32) u32 {
         var start: u16 = undefined;
         const item: u32 = (search - end_count) >> 1;
 
-        assert(unicode_codepoint <= toNative(u16, @ptrFromInt(*u16, @intFromPtr(data.ptr) + end_count + (item * 2)).*, .Big));
-        start = toNative(u16, @ptrFromInt(*u16, @intFromPtr(data.ptr) + encoding_offset + 14 + (segcount * 2) + 2 + (2 * item)).*, .Big);
+        assert(unicode_codepoint <= toNative(u16, @as(*u16, @ptrFromInt(@intFromPtr(data.ptr) + end_count + (item * 2))).*, .Big));
+        start = toNative(u16, @as(*u16, @ptrFromInt(@intFromPtr(data.ptr) + encoding_offset + 14 + (segcount * 2) + 2 + (2 * item))).*, .Big);
 
         if (unicode_codepoint < start) {
             // TODO: return error
@@ -1301,23 +1301,23 @@ pub fn findGlyphIndex(font_info: *const FontInfo, unicode_codepoint: i32) u32 {
             return 0;
         }
 
-        offset = toNative(u16, @ptrFromInt(*u16, @intFromPtr(data.ptr) + encoding_offset + 14 + (segcount * 6) + 2 + (item * 2)).*, .Big);
+        offset = toNative(u16, @as(*u16, @ptrFromInt(@intFromPtr(data.ptr) + encoding_offset + 14 + (segcount * 6) + 2 + (item * 2))).*, .Big);
         if (offset == 0) {
-            const base = bigToNative(i16, @ptrFromInt(*i16, base_index + 14 + (segcount * 4) + 2 + (2 * item)).*);
-            return @intCast(u32, unicode_codepoint + base);
+            const base = bigToNative(i16, @as(*i16, @ptrFromInt(base_index + 14 + (segcount * 4) + 2 + (2 * item))).*);
+            return @as(u32, @intCast(unicode_codepoint + base));
         }
 
-        const result_addr_index = @intFromPtr(data.ptr) + offset + @intCast(usize, unicode_codepoint - start) * 2 + encoding_offset + 14 + (segcount * 6) + 2 + (2 * item);
+        const result_addr_index = @intFromPtr(data.ptr) + offset + @as(usize, @intCast(unicode_codepoint - start)) * 2 + encoding_offset + 14 + (segcount * 6) + 2 + (2 * item);
 
-        const result_addr = @ptrFromInt(*u8, result_addr_index);
-        const result_addr_aligned = @ptrCast(*u16, @alignCast(2, result_addr));
+        const result_addr = @as(*u8, @ptrFromInt(result_addr_index));
+        const result_addr_aligned = @as(*u16, @ptrCast(@alignCast(result_addr)));
 
-        return @intCast(u32, toNative(u16, result_addr_aligned.*, .Big));
+        return @as(u32, @intCast(toNative(u16, result_addr_aligned.*, .Big)));
     }
 }
 
 inline fn readBigEndian(comptime T: type, index: usize) T {
-    return bigToNative(T, @ptrFromInt(*T, index).*);
+    return bigToNative(T, @as(*T, @ptrFromInt(index)).*);
 }
 
 pub fn getAscent(font: *const FontInfo) i16 {
@@ -1336,7 +1336,7 @@ fn parseGlyfTableIndexForGlyph(font: *const FontInfo, glyph_index: u32) !usize {
     const font_data_start_index = @intFromPtr(&font.data[0]);
     if (font.index_to_loc_format != 0 and font.index_to_loc_format != 1) return error.InvalidIndexToLocationFormat;
     const loca_start = font_data_start_index + font.loca.offset;
-    const glyf_offset = @intCast(usize, font.glyf.offset);
+    const glyf_offset = @as(usize, @intCast(font.glyf.offset));
 
     var glyph_data_offset: usize = 0;
     var next_glyph_data_offset: usize = 0;
@@ -1346,12 +1346,12 @@ fn parseGlyfTableIndexForGlyph(font: *const FontInfo, glyph_index: u32) !usize {
     if (font.index_to_loc_format == 0) {
         // Location values are stored as half the actual value.
         // https://docs.microsoft.com/en-us/typography/opentype/spec/loca#short-version
-        const loca_table_offset: usize = loca_start + (@intCast(usize, glyph_index) * 2);
-        glyph_data_offset = glyf_offset + @intCast(u32, readBigEndian(u16, loca_table_offset + 0)) * 2;
-        next_glyph_data_offset = glyf_offset + @intCast(u32, readBigEndian(u16, loca_table_offset + 2)) * 2;
+        const loca_table_offset: usize = loca_start + (@as(usize, @intCast(glyph_index)) * 2);
+        glyph_data_offset = glyf_offset + @as(u32, @intCast(readBigEndian(u16, loca_table_offset + 0))) * 2;
+        next_glyph_data_offset = glyf_offset + @as(u32, @intCast(readBigEndian(u16, loca_table_offset + 2))) * 2;
     } else {
-        glyph_data_offset = glyf_offset + readBigEndian(u32, loca_start + (@intCast(usize, glyph_index) * 4) + 0);
-        next_glyph_data_offset = glyf_offset + readBigEndian(u32, loca_start + (@intCast(usize, glyph_index) * 4) + 4);
+        glyph_data_offset = glyf_offset + readBigEndian(u32, loca_start + (@as(usize, @intCast(glyph_index)) * 4) + 0);
+        next_glyph_data_offset = glyf_offset + readBigEndian(u32, loca_start + (@as(usize, @intCast(glyph_index)) * 4) + 4);
     }
 
     if (glyph_data_offset == next_glyph_data_offset) {
@@ -1369,10 +1369,10 @@ pub fn boundingBoxForCodepoint(font: *const FontInfo, codepoint: i32) !geometry.
     const font_data_start_index = @intFromPtr(&font.data[0]);
     const base_index: usize = font_data_start_index + section_index;
     return geometry.BoundingBox(i32){
-        .x0 = bigToNative(i16, @ptrFromInt(*i16, base_index + 2).*), // min_x
-        .y0 = bigToNative(i16, @ptrFromInt(*i16, base_index + 4).*), // min_y
-        .x1 = bigToNative(i16, @ptrFromInt(*i16, base_index + 6).*), // max_x
-        .y1 = bigToNative(i16, @ptrFromInt(*i16, base_index + 8).*), // max_y
+        .x0 = bigToNative(i16, @as(*i16, @ptrFromInt(base_index + 2)).*), // min_x
+        .y0 = bigToNative(i16, @as(*i16, @ptrFromInt(base_index + 4)).*), // min_y
+        .x1 = bigToNative(i16, @as(*i16, @ptrFromInt(base_index + 6)).*), // max_x
+        .y1 = bigToNative(i16, @as(*i16, @ptrFromInt(base_index + 8)).*), // max_y
     };
 }
 
@@ -1381,20 +1381,20 @@ pub fn calculateGlyphBoundingBox(font: *const FontInfo, glyph_index: u32) !geome
     const font_data_start_index = @intFromPtr(&font.data[0]);
     const base_index: usize = font_data_start_index + section_index;
     return geometry.BoundingBox(i32){
-        .x0 = bigToNative(i16, @ptrFromInt(*i16, base_index + 2).*), // min_x
-        .y0 = bigToNative(i16, @ptrFromInt(*i16, base_index + 4).*), // min_y
-        .x1 = bigToNative(i16, @ptrFromInt(*i16, base_index + 6).*), // max_x
-        .y1 = bigToNative(i16, @ptrFromInt(*i16, base_index + 8).*), // max_y
+        .x0 = bigToNative(i16, @as(*i16, @ptrFromInt(base_index + 2)).*), // min_x
+        .y0 = bigToNative(i16, @as(*i16, @ptrFromInt(base_index + 4)).*), // min_y
+        .x1 = bigToNative(i16, @as(*i16, @ptrFromInt(base_index + 6)).*), // max_x
+        .y1 = bigToNative(i16, @as(*i16, @ptrFromInt(base_index + 8)).*), // max_y
     };
 }
 
 pub fn calculateGlyphBoundingBoxScaled(font: *const FontInfo, glyph_index: u32, scale: f64) !geometry.BoundingBox(f64) {
     const unscaled = try calculateGlyphBoundingBox(font, glyph_index);
     return geometry.BoundingBox(f64){
-        .x0 = @floatFromInt(f64, unscaled.x0) * scale,
-        .y0 = @floatFromInt(f64, unscaled.y0) * scale,
-        .x1 = @floatFromInt(f64, unscaled.x1) * scale,
-        .y1 = @floatFromInt(f64, unscaled.y1) * scale,
+        .x0 = @as(f64, @floatFromInt(unscaled.x0)) * scale,
+        .y0 = @as(f64, @floatFromInt(unscaled.y0)) * scale,
+        .x1 = @as(f64, @floatFromInt(unscaled.x1)) * scale,
+        .y1 = @as(f64, @floatFromInt(unscaled.y1)) * scale,
     };
 }
 
@@ -1411,27 +1411,27 @@ pub fn rasterizeGlyph(
 
     const bounding_box = try calculateGlyphBoundingBox(font, glyph_index);
     const bounding_box_scaled = geometry.BoundingBox(i32){
-        .x0 = @intFromFloat(i32, @floor(@floatFromInt(f64, bounding_box.x0) * scale)),
-        .y0 = @intFromFloat(i32, @floor(@floatFromInt(f64, bounding_box.y0) * scale)),
-        .x1 = @intFromFloat(i32, @ceil(@floatFromInt(f64, bounding_box.x1) * scale)),
-        .y1 = @intFromFloat(i32, @ceil(@floatFromInt(f64, bounding_box.y1) * scale)),
+        .x0 = @as(i32, @intFromFloat(@floor(@as(f64, @floatFromInt(bounding_box.x0)) * scale))),
+        .y0 = @as(i32, @intFromFloat(@floor(@as(f64, @floatFromInt(bounding_box.y0)) * scale))),
+        .x1 = @as(i32, @intFromFloat(@ceil(@as(f64, @floatFromInt(bounding_box.x1)) * scale))),
+        .y1 = @as(i32, @intFromFloat(@ceil(@as(f64, @floatFromInt(bounding_box.y1)) * scale))),
     };
 
     std.debug.assert(bounding_box.y1 >= bounding_box.y0);
     for (vertices) |*vertex| {
-        vertex.x -= @intCast(i16, bounding_box.x0);
-        vertex.y -= @intCast(i16, bounding_box.y0);
-        if (@enumFromInt(VMove, vertex.kind) == .curve) {
-            vertex.control1_x -= @intCast(i16, bounding_box.x0);
-            vertex.control1_y -= @intCast(i16, bounding_box.y0);
+        vertex.x -= @as(i16, @intCast(bounding_box.x0));
+        vertex.y -= @as(i16, @intCast(bounding_box.y0));
+        if (@as(VMove, @enumFromInt(vertex.kind)) == .curve) {
+            vertex.control1_x -= @as(i16, @intCast(bounding_box.x0));
+            vertex.control1_y -= @as(i16, @intCast(bounding_box.y0));
         }
     }
     const dimensions = geometry.Dimensions2D(u32){
-        .width = @intCast(u32, bounding_box_scaled.x1 - bounding_box_scaled.x0),
-        .height = @intCast(u32, bounding_box_scaled.y1 - bounding_box_scaled.y0),
+        .width = @as(u32, @intCast(bounding_box_scaled.x1 - bounding_box_scaled.x0)),
+        .height = @as(u32, @intCast(bounding_box_scaled.y1 - bounding_box_scaled.y0)),
     };
 
-    const outlines = try createOutlines(allocator, vertices, @floatFromInt(f64, dimensions.height), scale);
+    const outlines = try createOutlines(allocator, vertices, @as(f64, @floatFromInt(dimensions.height)), scale);
     defer {
         for (outlines) |*outline| {
             allocator.free(outline.segments);
@@ -1454,27 +1454,27 @@ pub fn rasterizeGlyphAlloc(
 
     const bounding_box = try calculateGlyphBoundingBox(font, glyph_index);
     const bounding_box_scaled = geometry.BoundingBox(i32){
-        .x0 = @intFromFloat(i32, @floor(@floatFromInt(f64, bounding_box.x0) * scale)),
-        .y0 = @intFromFloat(i32, @floor(@floatFromInt(f64, bounding_box.y0) * scale)),
-        .x1 = @intFromFloat(i32, @ceil(@floatFromInt(f64, bounding_box.x1) * scale)),
-        .y1 = @intFromFloat(i32, @ceil(@floatFromInt(f64, bounding_box.y1) * scale)),
+        .x0 = @as(i32, @intFromFloat(@floor(@as(f64, @floatFromInt(bounding_box.x0)) * scale))),
+        .y0 = @as(i32, @intFromFloat(@floor(@as(f64, @floatFromInt(bounding_box.y0)) * scale))),
+        .x1 = @as(i32, @intFromFloat(@ceil(@as(f64, @floatFromInt(bounding_box.x1)) * scale))),
+        .y1 = @as(i32, @intFromFloat(@ceil(@as(f64, @floatFromInt(bounding_box.y1)) * scale))),
     };
 
     std.debug.assert(bounding_box.y1 >= bounding_box.y0);
     for (vertices) |*vertex| {
-        vertex.x -= @intCast(i16, bounding_box.x0);
-        vertex.y -= @intCast(i16, bounding_box.y0);
-        if (@enumFromInt(VMove, vertex.kind) == .curve) {
-            vertex.control1_x -= @intCast(i16, bounding_box.x0);
-            vertex.control1_y -= @intCast(i16, bounding_box.y0);
+        vertex.x -= @as(i16, @intCast(bounding_box.x0));
+        vertex.y -= @as(i16, @intCast(bounding_box.y0));
+        if (@as(VMove, @enumFromInt(vertex.kind)) == .curve) {
+            vertex.control1_x -= @as(i16, @intCast(bounding_box.x0));
+            vertex.control1_y -= @as(i16, @intCast(bounding_box.y0));
         }
     }
     const dimensions = geometry.Dimensions2D(u32){
-        .width = @intCast(u32, bounding_box_scaled.x1 - bounding_box_scaled.x0),
-        .height = @intCast(u32, bounding_box_scaled.y1 - bounding_box_scaled.y0),
+        .width = @as(u32, @intCast(bounding_box_scaled.x1 - bounding_box_scaled.x0)),
+        .height = @as(u32, @intCast(bounding_box_scaled.y1 - bounding_box_scaled.y0)),
     };
 
-    const outlines = try createOutlines(allocator, vertices, @floatFromInt(f64, dimensions.height), scale);
+    const outlines = try createOutlines(allocator, vertices, @as(f64, @floatFromInt(dimensions.height)), scale);
     defer {
         for (outlines) |*outline| {
             allocator.free(outline.segments);
@@ -1487,7 +1487,7 @@ pub fn rasterizeGlyphAlloc(
         .height = dimensions.height,
         .pixels = undefined,
     };
-    const pixel_count = @intCast(usize, dimensions.width) * dimensions.height;
+    const pixel_count = @as(usize, @intCast(dimensions.width)) * dimensions.height;
     const pixels = try allocator.alloc(graphics.RGBA(f32), pixel_count);
     bitmap.pixels = pixels.ptr;
     @memset(pixels, graphics.RGBA(f32){ .r = 0.0, .g = 0.0, .b = 0.0, .a = 0.0 });
@@ -1541,10 +1541,10 @@ fn closeShape(
 
 fn setVertex(vertex: *Vertex, kind: VMove, x: i32, y: i32, control1_x: i32, control1_y: i32) void {
     vertex.kind = @intFromEnum(kind);
-    vertex.x = @intCast(i16, x);
-    vertex.y = @intCast(i16, y);
-    vertex.control1_x = @intCast(i16, control1_x);
-    vertex.control1_y = @intCast(i16, control1_y);
+    vertex.x = @as(i16, @intCast(x));
+    vertex.y = @as(i16, @intCast(y));
+    vertex.control1_x = @as(i16, @intCast(control1_x));
+    vertex.control1_y = @as(i16, @intCast(control1_y));
 }
 
 const VMove = enum(u8) {
@@ -1564,7 +1564,7 @@ pub inline fn pixelPerEmScale(point_size: f64, ppi: f64) f64 {
 }
 
 pub inline fn fUnitToPixelScale(point_size: f64, ppi: f64, units_per_em: u16) f64 {
-    return (point_size * ppi) / (72 * @floatFromInt(f32, units_per_em));
+    return (point_size * ppi) / (72 * @as(f32, @floatFromInt(units_per_em)));
 }
 
 /// Calculates the required scale value to generate glyphs with a max height of
@@ -1574,9 +1574,9 @@ pub inline fn fUnitToPixelScale(point_size: f64, ppi: f64, units_per_em: u16) f6
 pub fn scaleForPixelHeight(font: *const FontInfo, desired_height: f32) f32 {
     const font_data_start_index = @intFromPtr(&font.data[0]);
     const base_index: usize = font_data_start_index + font.hhea.offset;
-    const ascender = bigToNative(i16, @ptrFromInt(*i16, (base_index + 4)).*);
-    const descender = bigToNative(i16, @ptrFromInt(*i16, (base_index + 6)).*);
-    const unscaled_height = @floatFromInt(f32, ascender + (-descender));
+    const ascender = bigToNative(i16, @as(*i16, @ptrFromInt((base_index + 4))).*);
+    const descender = bigToNative(i16, @as(*i16, @ptrFromInt((base_index + 6))).*);
+    const unscaled_height = @as(f32, @floatFromInt(ascender + (-descender)));
     return desired_height / unscaled_height;
 }
 
@@ -1586,8 +1586,8 @@ pub fn getRequiredDimensions(font: *const FontInfo, codepoint: i32, scale: f64) 
     std.debug.assert(bounding_box.x1 >= bounding_box.x0);
     std.debug.assert(bounding_box.y1 >= bounding_box.y0);
     return geometry.Dimensions2D(u32){
-        .width = @intFromFloat(u32, @ceil(bounding_box.x1) - @floor(bounding_box.x0)),
-        .height = @intFromFloat(u32, @ceil(bounding_box.y1) - @floor(bounding_box.y0)),
+        .width = @as(u32, @intFromFloat(@ceil(bounding_box.x1) - @floor(bounding_box.x0))),
+        .height = @as(u32, @intFromFloat(@ceil(bounding_box.y1) - @floor(bounding_box.y0))),
     };
 }
 
@@ -1620,11 +1620,11 @@ fn loadGlyphVertices(allocator: std.mem.Allocator, font: *const FontInfo, glyph_
     max_x = readBigEndian(i16, glyph_offset_index + 6);
     max_y = readBigEndian(i16, glyph_offset_index + 8);
 
-    glyph_dimensions.width = @intCast(u32, max_x - min_x + 1);
-    glyph_dimensions.height = @intCast(u32, max_y - min_y + 1);
+    glyph_dimensions.width = @as(u32, @intCast(max_x - min_x + 1));
+    glyph_dimensions.height = @as(u32, @intCast(max_y - min_y + 1));
 
     if (contour_count_signed > 0) {
-        const contour_count: u32 = @intCast(u16, contour_count_signed);
+        const contour_count: u32 = @as(u16, @intCast(contour_count_signed));
 
         var j: i32 = 0;
         var m: u32 = 0;
@@ -1637,25 +1637,25 @@ fn loadGlyphVertices(allocator: std.mem.Allocator, font: *const FontInfo, glyph_
         var off: usize = 0;
 
         // end_points_of_contours is located directly after GlyphHeader in the glyf table
-        const end_points_of_contours = @ptrFromInt([*]u16, glyph_offset_index + @sizeOf(GlyhHeader));
-        const end_points_of_contours_size = @intCast(usize, contour_count * @sizeOf(u16));
+        const end_points_of_contours = @as([*]u16, @ptrFromInt(glyph_offset_index + @sizeOf(GlyhHeader)));
+        const end_points_of_contours_size = @as(usize, @intCast(contour_count * @sizeOf(u16)));
 
         const simple_glyph_table_index = glyph_offset_index + @sizeOf(GlyhHeader);
 
         // Get the size of the instructions so we can skip past them
         const instructions_size_bytes = readBigEndian(i16, simple_glyph_table_index + end_points_of_contours_size);
 
-        var glyph_flags: [*]u8 = @ptrFromInt([*]u8, glyph_offset_index + @sizeOf(GlyhHeader) + (@intCast(usize, contour_count) * 2) + 2 + @intCast(usize, instructions_size_bytes));
+        var glyph_flags: [*]u8 = @as([*]u8, @ptrFromInt(glyph_offset_index + @sizeOf(GlyhHeader) + (@as(usize, @intCast(contour_count)) * 2) + 2 + @as(usize, @intCast(instructions_size_bytes))));
 
         // NOTE: The number of flags is determined by the last entry in the endPtsOfContours array
-        n = 1 + readBigEndian(u16, @intFromPtr(end_points_of_contours) + (@intCast(usize, contour_count - 1) * 2));
+        n = 1 + readBigEndian(u16, @intFromPtr(end_points_of_contours) + (@as(usize, @intCast(contour_count - 1)) * 2));
 
         // What is m here?
         // Size of contours
         {
             // Allocate space for all the flags, and vertices
             m = n + (2 * contour_count);
-            vertices = try allocator.alloc(Vertex, @intCast(usize, m) * @sizeOf(Vertex));
+            vertices = try allocator.alloc(Vertex, @as(usize, @intCast(m)) * @sizeOf(Vertex));
 
             assert((m - n) > 0);
             off = (2 * contour_count);
@@ -1678,7 +1678,7 @@ fn loadGlyphVertices(allocator: std.mem.Allocator, font: *const FontInfo, glyph_
                 } else {
                     flag_count -= 1;
                 }
-                vertices[@intCast(usize, off) + @intCast(usize, i)].kind = flags;
+                vertices[@as(usize, @intCast(off)) + @as(usize, @intCast(i))].kind = flags;
                 flags_len += 1;
             }
         }
@@ -1687,7 +1687,7 @@ fn loadGlyphVertices(allocator: std.mem.Allocator, font: *const FontInfo, glyph_
             var x: i16 = 0;
             var i: usize = 0;
             while (i < n) : (i += 1) {
-                flags = vertices[@intCast(usize, off) + @intCast(usize, i)].kind;
+                flags = vertices[@as(usize, @intCast(off)) + @as(usize, @intCast(i))].kind;
                 if (isFlagSet(flags, GlyphFlags.x_short_vector)) {
                     const dx: i16 = glyph_flags[0];
                     glyph_flags += 1;
@@ -1696,7 +1696,7 @@ fn loadGlyphVertices(allocator: std.mem.Allocator, font: *const FontInfo, glyph_
                     if (!isFlagSet(flags, GlyphFlags.same_x)) {
 
                         // The current x-coordinate is a signed 16-bit delta vector
-                        const abs_x = (@intCast(i16, glyph_flags[0]) << 8) + glyph_flags[1];
+                        const abs_x = (@as(i16, @intCast(glyph_flags[0])) << 8) + glyph_flags[1];
 
                         x += abs_x;
                         glyph_flags += 2;
@@ -1719,7 +1719,7 @@ fn loadGlyphVertices(allocator: std.mem.Allocator, font: *const FontInfo, glyph_
                 } else {
                     if (!isFlagSet(flags, GlyphFlags.same_y)) {
                         // The current y-coordinate is a signed 16-bit delta vector
-                        const abs_y = (@intCast(i16, glyph_flags[0]) << 8) + glyph_flags[1];
+                        const abs_y = (@as(i16, @intCast(glyph_flags[0])) << 8) + glyph_flags[1];
                         y += abs_y;
                         glyph_flags += 2;
                     }
@@ -1772,7 +1772,7 @@ fn loadGlyphVertices(allocator: std.mem.Allocator, font: *const FontInfo, glyph_
                 setVertex(&vertices[vertices_count], .move, start_x, start_y, 0, 0);
                 vertices_count += 1;
                 was_off = false;
-                next_move = 1 + readBigEndian(i16, @intFromPtr(end_points_of_contours) + (@intCast(usize, j) * 2));
+                next_move = 1 + readBigEndian(i16, @intFromPtr(end_points_of_contours) + (@as(usize, @intCast(j)) * 2));
                 j += 1;
             } else {
                 // Continue current contour
@@ -1821,13 +1821,13 @@ fn loadGlyphVertices(allocator: std.mem.Allocator, font: *const FontInfo, glyph_
 /// Applies Y flip and scaling
 fn createOutlines(allocator: std.mem.Allocator, vertices: []Vertex, height: f64, scale: f32) ![]Outline {
     // TODO:
-    std.debug.assert(@enumFromInt(VMove, vertices[0].kind) == .move);
+    std.debug.assert(@as(VMove, @enumFromInt(vertices[0].kind)) == .move);
 
     var outline_segment_lengths = [1]u32{0} ** 32;
     const outline_count: u32 = blk: {
         var count: u32 = 0;
         for (vertices[1..]) |vertex| {
-            if (@enumFromInt(VMove, vertex.kind) == .move) {
+            if (@as(VMove, @enumFromInt(vertex.kind)) == .move) {
                 count += 1;
                 continue;
             }
@@ -1849,7 +1849,7 @@ fn createOutlines(allocator: std.mem.Allocator, vertices: []Vertex, height: f64,
         var outline_index: u32 = 0;
         var outline_segment_index: u32 = 0;
         while (vertex_index < vertices.len) {
-            switch (@enumFromInt(VMove, vertices[vertex_index].kind)) {
+            switch (@as(VMove, @enumFromInt(vertices[vertex_index].kind))) {
                 .move => {
                     vertex_index += 1;
                     outline_index += 1;
@@ -1858,8 +1858,8 @@ fn createOutlines(allocator: std.mem.Allocator, vertices: []Vertex, height: f64,
                 .line => {
                     const from = vertices[vertex_index - 1];
                     const to = vertices[vertex_index];
-                    const point_from = Point(f64){ .x = @floatFromInt(f64, from.x) * scale, .y = height - (@floatFromInt(f64, from.y) * scale) };
-                    const point_to = Point(f64){ .x = @floatFromInt(f64, to.x) * scale, .y = height - (@floatFromInt(f64, to.y) * scale) };
+                    const point_from = Point(f64){ .x = @as(f64, @floatFromInt(from.x)) * scale, .y = height - (@as(f64, @floatFromInt(from.y)) * scale) };
+                    const point_to = Point(f64){ .x = @as(f64, @floatFromInt(to.x)) * scale, .y = height - (@as(f64, @floatFromInt(to.y)) * scale) };
                     const dist = geometry.distanceBetweenPoints(point_from, point_to);
                     const t_per_pixel: f64 = 1.0 / dist;
                     outlines[outline_index].segments[outline_segment_index] = OutlineSegment{
@@ -1873,16 +1873,16 @@ fn createOutlines(allocator: std.mem.Allocator, vertices: []Vertex, height: f64,
                 .curve => {
                     const from = vertices[vertex_index - 1];
                     const to = vertices[vertex_index];
-                    const point_from = Point(f64){ .x = @floatFromInt(f64, from.x) * scale, .y = height - (@floatFromInt(f64, from.y) * scale) };
-                    const point_to = Point(f64){ .x = @floatFromInt(f64, to.x) * scale, .y = height - (@floatFromInt(f64, to.y) * scale) };
+                    const point_from = Point(f64){ .x = @as(f64, @floatFromInt(from.x)) * scale, .y = height - (@as(f64, @floatFromInt(from.y)) * scale) };
+                    const point_to = Point(f64){ .x = @as(f64, @floatFromInt(to.x)) * scale, .y = height - (@as(f64, @floatFromInt(to.y)) * scale) };
                     var segment_ptr: *OutlineSegment = &outlines[outline_index].segments[outline_segment_index];
                     segment_ptr.* = OutlineSegment{
                         .from = point_from,
                         .to = point_to,
                         .t_per_pixel = undefined,
                         .control = Point(f64){
-                            .x = @floatFromInt(f64, to.control1_x) * scale,
-                            .y = height - (@floatFromInt(f64, to.control1_y) * scale),
+                            .x = @as(f64, @floatFromInt(to.control1_x)) * scale,
+                            .y = height - (@as(f64, @floatFromInt(to.control1_y)) * scale),
                         },
                     };
                     const outline_length_pixels: f64 = blk: {
@@ -1893,7 +1893,7 @@ fn createOutlines(allocator: std.mem.Allocator, vertices: []Vertex, height: f64,
                         var accumulator: f64 = 0;
                         var point_previous = point_from;
                         while (i <= 10) : (i += 1) {
-                            const point_sampled = segment_ptr.sample(@floatFromInt(f64, i) * 0.1);
+                            const point_sampled = segment_ptr.sample(@as(f64, @floatFromInt(i)) * 0.1);
                             accumulator += geometry.distanceBetweenPoints(point_previous, point_sampled);
                         }
                         break :blk accumulator;
