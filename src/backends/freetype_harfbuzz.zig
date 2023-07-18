@@ -129,7 +129,7 @@ pub fn PenConfigInternal(comptime options: api.PenConfigOptionsInternal) type {
                                 texture_pixels[index].r = 0.8;
                                 texture_pixels[index].g = 0.8;
                                 texture_pixels[index].b = 0.8;
-                                texture_pixels[index].a = value;
+                                texture_pixels[index].a = @as(f32, @floatFromInt(value)) / 255.0;
                             },
                             else => unreachable,
                         }
