@@ -36,6 +36,7 @@ const GetKerningFn = *const fn (
     kern_mode: u32,
     kern_value: *freetype.Vector,
 ) callconv(.C) i32;
+const RenderGlyphFn = *const fn (slot: freetype.GlyphSlot, render_mode: freetype.RenderMode) i32;
 
 //
 // Harfbuzz Functions
@@ -99,8 +100,14 @@ pub fn PenConfigInternal(comptime options: api.PenConfigOptionsInternal) type {
             self.backend_ref.hbFontChanged(self.backend_ref.harfbuzz_font);
 
             for (codepoints, 0..) |codepoint, codepoint_i| {
-                const err_code = self.backend_ref.loadCharFn(face, @as(u32, @intCast(codepoint)), .{ .render = true });
-                std.debug.assert(err_code == 0);
+                if (self.backend_ref.loadCharFn(face, @as(u32, @intCast(codepoint)), .{}) != 0) {
+                    return error.LoadGlyphFail;
+                }
+
+                if (self.backend_ref.renderGlyphFn(face.glyph, .normal) != 0) {
+                    return error.RenderGlyphFailed;
+                }
+
                 const bitmap = face.glyph.bitmap;
                 const bitmap_height = bitmap.rows;
                 const bitmap_width = bitmap.width;
@@ -125,6 +132,12 @@ pub fn PenConfigInternal(comptime options: api.PenConfigOptionsInternal) type {
                         const index: usize = (placement.x + x) + ((y + placement.y) * texture_size);
                         switch (comptime options.pixel_format) {
                             .r8 => texture_pixels[index] = value,
+                            .r8g8b8a8 => {
+                                texture_pixels[index].r = 200;
+                                texture_pixels[index].g = 200;
+                                texture_pixels[index].b = 200;
+                                texture_pixels[index].a = value;
+                            },
                             .r32g32b32a32 => {
                                 texture_pixels[index].r = 0.8;
                                 texture_pixels[index].g = 0.8;
@@ -466,6 +479,7 @@ pub fn FontConfig(comptime options: api.FontOptions) type {
         loadGlyphFn: LoadGlyphFn,
         setCharSizeFn: SetCharSizeFn,
         getKerningFn: GetKerningFn,
+        renderGlyphFn: RenderGlyphFn,
 
         hbFontCreateFn: HbFontCreateFn,
         hbFontSetFuncs: HbFontSetFuncsFn,
@@ -517,6 +531,8 @@ pub fn FontConfig(comptime options: api.FontOptions) type {
             self.setCharSizeFn = freetype_handle.lookup(SetCharSizeFn, "FT_Set_Char_Size") orelse
                 return error.LookupFailed;
             self.getKerningFn = freetype_handle.lookup(GetKerningFn, "FT_Get_Kerning") orelse
+                return error.LookupFailed;
+            self.renderGlyphFn = freetype_handle.lookup(RenderGlyphFn, "FT_Render_Glyph") orelse
                 return error.LookupFailed;
 
             self.hbFontCreateFn = harfbuzz_handle.lookup(HbFontCreateFn, "hb_ft_font_create_referenced") orelse

@@ -13,6 +13,14 @@ pub const F26Dot6 = i64;
 pub const GlyphFormat = i32;
 pub const Encoding = i32;
 
+pub const RenderMode = enum(u32) {
+    normal,
+    light,
+    mono,
+    lcd,
+    lcd_v,
+};
+
 pub const LoadFlags = packed struct(i32) {
     no_scale: bool = false,
     no_hinting: bool = false,
