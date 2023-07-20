@@ -10,13 +10,17 @@ pub const pkg = Pkg{
 };
 
 pub fn build(b: *Builder) void {
-    const buildMode = b.standardReleaseOptions();
+    const target = b.standardTargetOptions(.{});
+    const optimize = b.standardOptimizeOption(.{});
 
-    const fontana_build_test = b.addTestExe("fontana-tests", "src/fontana.zig");
-    fontana_build_test.setBuildMode(buildMode);
-    fontana_build_test.install();
+    const unit_tests = b.addTest(.{
+        .name = "Unit Tests",
+        .root_source_file = .{ .path = "src/fontana.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
 
-    const run_test_cmd = fontana_build_test.run();
+    const run_test_cmd = b.addRunArtifact(unit_tests);
     run_test_cmd.step.dependOn(b.getInstallStep());
 
     const test_step = b.step("test", "Run library tests");
