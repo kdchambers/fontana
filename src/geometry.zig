@@ -145,7 +145,7 @@ pub fn quadraticBezierPlaneIntersections(bezier: BezierQuadratic, horizontal_axi
 
 pub fn triangleArea(p1: Point(f64), p2: Point(f64), p3: Point(f64)) f64 {
     if (p1.x == p2.x and p2.x == p3.x) return 0.0;
-    return @fabs((p1.x * (p2.y - p3.y)) + (p2.x * (p3.y - p1.y)) + (p3.x * (p1.y - p2.y))) / 2.0;
+    return @abs((p1.x * (p2.y - p3.y)) + (p2.x * (p3.y - p1.y)) + (p3.x * (p1.y - p2.y))) / 2.0;
 }
 
 /// Given two points, one that lies inside a normalized boundry and one that lies outside

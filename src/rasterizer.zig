@@ -153,7 +153,7 @@ const IntersectionList = struct {
         std.debug.assert(dist_forward >= 0.0);
         std.debug.assert(dist_forward < max_t);
 
-        const dist_reverse = @mod(@fabs(base_t + (max_t - candidate_t)), max_t);
+        const dist_reverse: f64 = @mod(@abs(base_t + (max_t - candidate_t)), max_t);
         std.debug.assert(dist_reverse >= 0.0);
         std.debug.assert(dist_reverse < max_t);
 
@@ -174,7 +174,7 @@ const IntersectionList = struct {
             if (other.t == base_t or other.t == candidate_t) continue;
             if (other_i == candidate_index or other_i == base_index) continue;
             if (other.outline_index != base_outline_index) continue;
-            const dist_other = @mod(@fabs(base_t + (max_t - other.t)), max_t);
+            const dist_other = @mod(@abs(base_t + (max_t - other.t)), max_t);
             if (dist_other < dist_reverse) {
                 return false;
             }
@@ -458,7 +458,7 @@ const OutlineSamplerUnbounded = struct {
             //
             const t_per_pixel = current_segment.t_per_pixel;
             self.t_increment = self.t_direction * (t_per_pixel / self.samples_per_pixel);
-            std.debug.assert(@fabs(self.t_increment) < 1.0);
+            std.debug.assert(@abs(self.t_increment) < 1.0);
             if (self.t_direction == 1.0) {
                 self.t_current = @floor(self.t_current);
                 std.debug.assert(old_segment.to.x == current_segment.from.x);
@@ -968,7 +968,7 @@ fn combineIntersectionLists(
                 const is_t_connected = intersections.isTConnected(intersection_i, other_i, outline_max_t);
                 if (is_t_connected) {
                     // TODO: This doesn't take into account wrapping
-                    const t_diff = @fabs(intersection.t - other_intersection.t);
+                    const t_diff = @abs(intersection.t - other_intersection.t);
                     if (t_diff < smallest_t_diff) {
                         smallest_t_diff = t_diff;
                         best_match_index = other_i;
@@ -1138,7 +1138,7 @@ fn calculateHorizontalLineIntersections(scanline_y: f64, outlines: []Outline) !Y
                     }
                     if (optional_intersection_points[1]) |second_intersection| {
                         const x_diff_threshold = 0.001;
-                        if (@fabs(second_intersection.x - first_intersection.x) > x_diff_threshold) {
+                        if (@abs(second_intersection.x - first_intersection.x) > x_diff_threshold) {
                             const t_second = @mod(@as(f64, @floatFromInt(segment_i)) + second_intersection.t, max_t);
                             const intersection = YIntersection{
                                 .outline_index = @as(u32, @intCast(outline_i)),
