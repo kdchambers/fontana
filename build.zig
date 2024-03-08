@@ -1,15 +1,8 @@
 const std = @import("std");
 
-const Builder = std.build.Builder;
-const Pkg = std.build.Pkg;
+const Build = std.Build;
 
-pub const pkg = Pkg{
-    .name = "fontana",
-    .source = .{ .path = "src/fontana.zig" },
-    .dependencies = &{},
-};
-
-pub fn build(b: *Builder) void {
+pub fn build(b: *Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 

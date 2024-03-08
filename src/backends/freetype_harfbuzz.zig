@@ -172,7 +172,7 @@ pub fn PenConfigInternal(comptime options: api.PenConfigOptionsInternal) type {
             );
             self.backend_ref.hbFontChanged(self.backend_ref.harfbuzz_font);
 
-            var buffer = self.backend_ref.hbBufferCreateFn();
+            const buffer = self.backend_ref.hbBufferCreateFn();
             defer self.backend_ref.hbBufferDestroyFn(buffer);
 
             self.backend_ref.hbBufferAddUTF8Fn(buffer, codepoints.ptr, @as(i32, @intCast(codepoints.len)), 0, -1);
@@ -290,7 +290,7 @@ pub fn PenConfigInternal(comptime options: api.PenConfigOptionsInternal) type {
             );
             self.backend_ref.hbFontChanged(self.backend_ref.harfbuzz_font);
 
-            var buffer = self.backend_ref.hbBufferCreateFn();
+            const buffer = self.backend_ref.hbBufferCreateFn();
             defer self.backend_ref.hbBufferDestroyFn(buffer);
             self.backend_ref.hbBufferAddUTF8Fn(buffer, codepoints.ptr, @as(i32, @intCast(codepoints.len)), 0, -1);
             self.backend_ref.hbBufferSetDirectionFn(buffer, .left_to_right);
@@ -376,7 +376,7 @@ pub fn PenConfigInternal(comptime options: api.PenConfigOptionsInternal) type {
             );
             self.backend_ref.hbFontChanged(self.backend_ref.harfbuzz_font);
 
-            var buffer = self.backend_ref.hbBufferCreateFn();
+            const buffer = self.backend_ref.hbBufferCreateFn();
             defer self.backend_ref.hbBufferDestroyFn(buffer);
 
             self.backend_ref.hbBufferAddUTF8Fn(buffer, codepoints.ptr, @as(i32, @intCast(codepoints.len)), 0, -1);

@@ -62,7 +62,7 @@ pub fn PenConfigInternal(comptime options: api.PenConfigOptionsInternal) type {
                 self.atlas_entries[codepoint_i].y += 1;
                 self.atlas_entries[codepoint_i].width -= 2;
                 self.atlas_entries[codepoint_i].height -= 2;
-                var pixel_writer = rasterizer.SubTexturePixelWriter(types.Pixel, types.Extent2DPixel){
+                const pixel_writer = rasterizer.SubTexturePixelWriter(types.Pixel, types.Extent2DPixel){
                     .texture_width = texture_size,
                     .pixels = texture_pixels,
                     .write_extent = self.atlas_entries[codepoint_i],
@@ -86,7 +86,7 @@ pub fn PenConfigInternal(comptime options: api.PenConfigOptionsInternal) type {
             var cursor = placement;
             const texture_width_height: f32 = @as(f32, @floatFromInt(self.atlas.size));
             var i: usize = 0;
-            var right_codepoint_opt: ?u8 = null;
+            const right_codepoint_opt: ?u8 = null;
             while (i < codepoints.len) : (i += 1) {
                 const codepoint = codepoints[i];
                 if (codepoint == ' ') {
@@ -128,7 +128,7 @@ pub fn PenConfigInternal(comptime options: api.PenConfigOptionsInternal) type {
         ) !void {
             const texture_width_height: f32 = @as(f32, @floatFromInt(self.atlas_ref.size));
             var i: usize = 0;
-            var right_codepoint_opt: ?u8 = null;
+            const right_codepoint_opt: ?u8 = null;
             var descent_max: f64 = 0;
             var ascender_max: f64 = 0;
             var total_width: f64 = 0;

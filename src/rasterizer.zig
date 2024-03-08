@@ -393,7 +393,7 @@ inline fn minTMiddle(a: f64, b: f64, max: f64) f64 {
     if (dist_forward < dist_reverse) {
         return @mod(a + (dist_forward / 2.0), max);
     }
-    var middle = @mod(b + (dist_reverse / 2.0), max);
+    const middle = @mod(b + (dist_reverse / 2.0), max);
     const result = if (middle >= 0.0) middle else middle + max;
     std.debug.assert(result >= 0.0);
     std.debug.assert(result <= max);
@@ -689,7 +689,7 @@ fn doAntiAliasing(
     sampler.init(t_end);
 
     var pixel_x = pixel_start;
-    var fill_anchor_point = Point(f64){ .x = 1.0, .y = point_left.y };
+    const fill_anchor_point = Point(f64){ .x = 1.0, .y = point_left.y };
 
     var previous_point = Point(f64){
         .x = point_left.x - @as(f64, @floatFromInt(pixel_x)),
@@ -703,7 +703,7 @@ fn doAntiAliasing(
 
     var coverage: f64 = 0.0;
     while (true) {
-        var sampled_point = sampler.nextSample(origin);
+        const sampled_point = sampler.nextSample(origin);
         if (sampled_point.x >= 1.0) {
             const interpolated_point = geometry.interpolateBoundryPoint(previous_point, sampled_point);
             assertNormalized(interpolated_point);

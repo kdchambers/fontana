@@ -594,7 +594,7 @@ pub fn kernAdvanceGpos(
         try fixed_buffer_stream.seekTo(script_list_offset + offset);
 
         const default_lang_offset = try reader.readIntBig(u16);
-        var lang_count = try reader.readIntBig(u16);
+        const lang_count = try reader.readIntBig(u16);
         _ = lang_count;
         if (std.mem.eql(u8, "DFLT", &tag)) {
             selected_lang_offset = default_lang_offset + offset;
@@ -765,7 +765,7 @@ pub fn generateKernPairsFromGpos(
         try fixed_buffer_stream.seekTo(script_list_offset + offset);
 
         const default_lang_offset = try reader.readIntBig(u16);
-        var lang_count = try reader.readIntBig(u16);
+        const lang_count = try reader.readIntBig(u16);
         _ = lang_count;
         if (std.mem.eql(u8, "DFLT", &tag)) {
             selected_lang_offset = default_lang_offset + offset;
@@ -930,7 +930,7 @@ pub fn loadFromFile(allocator: std.mem.Allocator, file_path: []const u8) !FontIn
 
     const file_size = (try file_handle.stat()).size;
 
-    var font_buffer = try allocator.alloc(u8, file_size);
+    const font_buffer = try allocator.alloc(u8, file_size);
     _ = try file_handle.readAll(font_buffer);
 
     return try parseFromBytes(font_buffer);
@@ -1491,7 +1491,7 @@ pub fn rasterizeGlyphAlloc(
     const pixels = try allocator.alloc(graphics.RGBA(f32), pixel_count);
     bitmap.pixels = pixels.ptr;
     @memset(pixels, graphics.RGBA(f32){ .r = 0.0, .g = 0.0, .b = 0.0, .a = 0.0 });
-    var pixel_writer = rasterizer.SubTexturePixelWriter(graphics.RGBA(f32)){
+    const pixel_writer = rasterizer.SubTexturePixelWriter(graphics.RGBA(f32)){
         .texture_width = dimensions.width,
         .write_extent = .{
             .x = 0,
@@ -1731,8 +1731,8 @@ fn loadGlyphVertices(allocator: std.mem.Allocator, font: *const FontInfo, glyph_
         assert(vertices_count == 0);
 
         var i: usize = 0;
-        var x: i16 = 0;
-        var y: i16 = 0;
+        const x: i16 = 0;
+        const y: i16 = 0;
 
         var control1_x: i32 = 0;
         var control1_y: i32 = 0;
@@ -1891,7 +1891,7 @@ fn createOutlines(allocator: std.mem.Allocator, vertices: []Vertex, height: f64,
                         //
                         var i: usize = 1;
                         var accumulator: f64 = 0;
-                        var point_previous = point_from;
+                        const point_previous = point_from;
                         while (i <= 10) : (i += 1) {
                             const point_sampled = segment_ptr.sample(@as(f64, @floatFromInt(i)) * 0.1);
                             accumulator += geometry.distanceBetweenPoints(point_previous, point_sampled);

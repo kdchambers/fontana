@@ -135,7 +135,7 @@ pub fn PenConfigInternal(comptime options: api.PenConfigOptionsInternal) type {
             );
             var cursor = placement;
             const texture_width_height: f32 = @as(f32, @floatFromInt(self.atlas_ref.size));
-            var face = self.backend_ref.face;
+            const face = self.backend_ref.face;
 
             const has_kerning = face.face_flags.kerning;
 
@@ -212,7 +212,7 @@ pub fn PenConfigInternal(comptime options: api.PenConfigOptionsInternal) type {
                 self.points_per_pixel,
             );
             const texture_width_height: f32 = @as(f32, @floatFromInt(self.atlas_ref.size));
-            var face = self.backend_ref.face;
+            const face = self.backend_ref.face;
 
             const RenderedTextMetrics = struct {
                 max_ascender: f64,
