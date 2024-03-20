@@ -84,7 +84,6 @@ pub fn PenConfigInternal(comptime options: api.PenConfigOptionsInternal) type {
             writer_interface: anytype,
         ) !void {
             var cursor = placement;
-            const texture_width_height: f32 = @as(f32, @floatFromInt(self.atlas.size));
             var i: usize = 0;
             const right_codepoint_opt: ?u8 = null;
             while (i < codepoints.len) : (i += 1) {
@@ -96,10 +95,10 @@ pub fn PenConfigInternal(comptime options: api.PenConfigOptionsInternal) type {
                 const glyph_metrics = self.font.glyphMetricsFromCodepoint(codepoint);
                 const glyph_texture_extent = self.textureExtentFromCodepoint(codepoint);
                 const texture_extent = types.Extent2DNative{
-                    .x = @as(f32, @floatFromInt(glyph_texture_extent.x)) / texture_width_height,
-                    .y = @as(f32, @floatFromInt(glyph_texture_extent.y)) / texture_width_height,
-                    .width = @as(f32, @floatFromInt(glyph_texture_extent.width)) / texture_width_height,
-                    .height = @as(f32, @floatFromInt(glyph_texture_extent.height)) / texture_width_height,
+                    .x = @as(f32, @floatFromInt(glyph_texture_extent.x)),
+                    .y = @as(f32, @floatFromInt(glyph_texture_extent.y)),
+                    .width = @as(f32, @floatFromInt(glyph_texture_extent.width)),
+                    .height = @as(f32, @floatFromInt(glyph_texture_extent.height)),
                 };
 
                 const screen_extent = types.Extent2DNative{
@@ -108,14 +107,14 @@ pub fn PenConfigInternal(comptime options: api.PenConfigOptionsInternal) type {
                     .width = @as(f32, @floatCast(@as(f64, @floatFromInt(glyph_texture_extent.width)) * screen_scale.horizontal)),
                     .height = @as(f32, @floatCast(@as(f64, @floatFromInt(glyph_texture_extent.height)) * screen_scale.vertical)),
                 };
-                try writer_interface.write(screen_extent, texture_extent);
+                const x_correction: f32 = writer_interface.write(screen_extent, texture_extent);
                 const advance_x: f64 = blk: {
                     if (right_codepoint_opt) |right_codepoint| {
                         break :blk self.font.kernPairAdvance(codepoint, right_codepoint) orelse glyph_metrics.advance_x;
                     }
                     break :blk glyph_metrics.advance_x;
                 };
-                cursor.x += @as(f32, @floatCast(advance_x * screen_scale.horizontal));
+                cursor.x += @as(f32, @floatCast(advance_x * screen_scale.horizontal)) + x_correction;
             }
         }
 
@@ -126,7 +125,6 @@ pub fn PenConfigInternal(comptime options: api.PenConfigOptionsInternal) type {
             screen_scale: types.Scale2D,
             writer_interface: anytype,
         ) !void {
-            const texture_width_height: f32 = @as(f32, @floatFromInt(self.atlas_ref.size));
             var i: usize = 0;
             const right_codepoint_opt: ?u8 = null;
             var descent_max: f64 = 0;
@@ -187,10 +185,10 @@ pub fn PenConfigInternal(comptime options: api.PenConfigOptionsInternal) type {
                 const glyph_metrics = self.glyphMetricsFromCodepoint(codepoint);
                 const glyph_texture_extent = self.textureExtentFromCodepoint(codepoint);
                 const texture_extent = types.Extent2DNative{
-                    .x = @as(f32, @floatFromInt(glyph_texture_extent.x)) / texture_width_height,
-                    .y = @as(f32, @floatFromInt(glyph_texture_extent.y)) / texture_width_height,
-                    .width = @as(f32, @floatFromInt(glyph_texture_extent.width)) / texture_width_height,
-                    .height = @as(f32, @floatFromInt(glyph_texture_extent.height)) / texture_width_height,
+                    .x = @as(f32, @floatFromInt(glyph_texture_extent.x)),
+                    .y = @as(f32, @floatFromInt(glyph_texture_extent.y)),
+                    .width = @as(f32, @floatFromInt(glyph_texture_extent.width)),
+                    .height = @as(f32, @floatFromInt(glyph_texture_extent.height)),
                 };
 
                 const screen_extent = types.Extent2DNative{
@@ -199,14 +197,14 @@ pub fn PenConfigInternal(comptime options: api.PenConfigOptionsInternal) type {
                     .width = @as(f32, @floatCast(@as(f64, @floatFromInt(glyph_texture_extent.width)) * screen_scale.horizontal)),
                     .height = @as(f32, @floatCast(@as(f64, @floatFromInt(glyph_texture_extent.height)) * screen_scale.vertical)),
                 };
-                try writer_interface.write(screen_extent, texture_extent);
+                const x_correction: f32 = writer_interface.write(screen_extent, texture_extent);
                 const advance_x: f64 = blk: {
                     if (right_codepoint_opt) |right_codepoint| {
                         break :blk self.kernPairAdvance(codepoint, right_codepoint) orelse glyph_metrics.advance_x;
                     }
                     break :blk glyph_metrics.advance_x;
                 };
-                cursor.x += @as(f32, @floatCast(advance_x * screen_scale.horizontal));
+                cursor.x += @as(f32, @floatCast(advance_x * screen_scale.horizontal)) + x_correction;
             }
         }
 
@@ -262,6 +260,7 @@ pub fn FontConfig(comptime options: api.FontOptions) type {
 
             return PenConfigInternal(.{
                 .type_overrides = .{
+                    .Dimensions2DNative = options.type_overrides.Dimensions2DNative,
                     .Extent2DPixel = options.type_overrides.Extent2DPixel,
                     .Extent2DNative = options.type_overrides.Extent2DNative,
                     .Coordinates2DNative = options.type_overrides.Coordinates2DNative,

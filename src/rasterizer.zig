@@ -287,6 +287,15 @@ pub const OutlineSegment = struct {
     }
 };
 
+fn TypeOfField(comptime t: anytype, comptime field_name: []const u8) type {
+    for (@typeInfo(t).Struct.fields) |field| {
+        if (std.mem.eql(u8, field.name, field_name)) {
+            return field.type;
+        }
+    }
+    unreachable;
+}
+
 pub fn SubTexturePixelWriter(comptime PixelType: type, comptime Extent2DPixel: type) type {
     return struct {
         texture_width: u32,
@@ -296,8 +305,8 @@ pub fn SubTexturePixelWriter(comptime PixelType: type, comptime Extent2DPixel: t
         pub inline fn add(self: @This(), coords: geometry.Coordinates2D(usize), coverage: f64) void {
             const x = coords.x;
             const y = coords.y;
-            std.debug.assert(coverage >= 0);
-            std.debug.assert(coverage <= 1);
+            std.debug.assert(coverage >= 0.0);
+            std.debug.assert(coverage <= 1.0);
             std.debug.assert(x >= 0);
             std.debug.assert(x < self.write_extent.width);
             std.debug.assert(y >= 0);
@@ -305,30 +314,46 @@ pub fn SubTexturePixelWriter(comptime PixelType: type, comptime Extent2DPixel: t
             const global_x = self.write_extent.x + x;
             const global_y = self.write_extent.y + y;
             const index = global_x + (self.texture_width * global_y);
-            const c = @as(f32, @floatCast(coverage));
 
-            // TODO: Detect type using comptime
+            const PixelChannelType: type = TypeOfField(PixelType, "r");
+            const c: PixelChannelType = blk: {
+                if (PixelChannelType == u8) {
+                    break :blk @intFromFloat(coverage * 255.0);
+                } else if (PixelChannelType == f32) {
+                    break :blk @floatCast(coverage);
+                } else unreachable;
+            };
+            const t: PixelChannelType = if (PixelChannelType == u8) 220 else 0.8;
+
             const use_transparency: bool = @hasField(PixelType, "a");
 
             if (@hasField(PixelType, "r"))
-                self.pixels[index].r = if (use_transparency) 0.8 else self.pixels[index].r + c;
+                self.pixels[index].r = if (use_transparency) t else self.pixels[index].r + c;
 
             if (@hasField(PixelType, "g"))
-                self.pixels[index].g = if (use_transparency) 0.8 else self.pixels[index].g + c;
+                self.pixels[index].g = if (use_transparency) t else self.pixels[index].g + c;
 
             if (@hasField(PixelType, "b"))
-                self.pixels[index].b = if (use_transparency) 0.8 else self.pixels[index].b + c;
+                self.pixels[index].b = if (use_transparency) t else self.pixels[index].b + c;
 
             if (use_transparency) {
-                self.pixels[index].a += c;
+                if (comptime PixelChannelType == u8) {
+                    var ret: u64 = self.pixels[index].a;
+                    ret += c;
+                    if (ret > 255)
+                        ret = 255;
+                    self.pixels[index].a = @intCast(ret);
+                } else {
+                    self.pixels[index].a += c;
+                }
             }
         }
 
         pub inline fn sub(self: @This(), coords: geometry.Coordinates2D(usize), coverage: f64) void {
             const x = coords.x;
             const y = coords.y;
-            std.debug.assert(coverage >= 0);
-            std.debug.assert(coverage <= 1);
+            std.debug.assert(coverage >= 0.0);
+            std.debug.assert(coverage <= 1.0);
             std.debug.assert(x >= 0);
             std.debug.assert(x < self.write_extent.width);
             std.debug.assert(y >= 0);
@@ -336,26 +361,44 @@ pub fn SubTexturePixelWriter(comptime PixelType: type, comptime Extent2DPixel: t
             const global_x = self.write_extent.x + x;
             const global_y = self.write_extent.y + y;
             const index = global_x + (self.texture_width * global_y);
-            const c = @as(f32, @floatCast(coverage));
 
-            // TODO: Detect type using comptime
+            const PixelChannelType: type = TypeOfField(PixelType, "r");
+
+            std.debug.assert(coverage <= 1.0);
+            const c: PixelChannelType = blk: {
+                if (PixelChannelType == u8) {
+                    break :blk @intFromFloat(coverage * 255.0);
+                } else if (PixelChannelType == f32) {
+                    break :blk @floatCast(coverage);
+                } else unreachable;
+            };
+            const t: PixelChannelType = if (PixelChannelType == u8) 220 else 0.8;
+
             const use_transparency: bool = @hasField(PixelType, "a");
 
             if (@hasField(PixelType, "r"))
-                self.pixels[index].r = if (use_transparency) 0.8 else self.pixels[index].r - c;
+                self.pixels[index].r = if (use_transparency) t else self.pixels[index].r - c;
 
             if (@hasField(PixelType, "g"))
-                self.pixels[index].g = if (use_transparency) 0.8 else self.pixels[index].g - c;
+                self.pixels[index].g = if (use_transparency) t else self.pixels[index].g - c;
 
             if (@hasField(PixelType, "b"))
-                self.pixels[index].b = if (use_transparency) 0.8 else self.pixels[index].b - c;
+                self.pixels[index].b = if (use_transparency) t else self.pixels[index].b - c;
 
             if (use_transparency) {
-                self.pixels[index].a -= c;
+                if (PixelChannelType == u8) {
+                    var ret: i64 = self.pixels[index].a;
+                    ret -= c;
+                    if (ret < 0)
+                        ret = 0;
+                    self.pixels[index].a = @intCast(ret);
+                } else {
+                    self.pixels[index].a -= c;
+                }
             }
         }
 
-        pub inline fn set(self: @This(), coords: geometry.Coordinates2D(usize), coverage: f64) void {
+        pub fn set(self: @This(), coords: geometry.Coordinates2D(usize), coverage: f64) void {
             const x = coords.x;
             const y = coords.y;
             std.debug.assert(x >= 0);
@@ -365,19 +408,27 @@ pub fn SubTexturePixelWriter(comptime PixelType: type, comptime Extent2DPixel: t
             const global_x = self.write_extent.x + x;
             const global_y = self.write_extent.y + y;
             const index = global_x + (self.texture_width * global_y);
-            const c = @as(f32, @floatCast(coverage));
 
-            // TODO: Detect type using comptime
+            const PixelChannelType: type = TypeOfField(PixelType, "r");
+            const c: PixelChannelType = blk: {
+                if (PixelChannelType == u8) {
+                    break :blk @intFromFloat(coverage * 255.0);
+                } else if (PixelChannelType == f32) {
+                    break :blk @floatCast(coverage);
+                } else unreachable;
+            };
+            const t: PixelChannelType = if (PixelChannelType == u8) 220 else 0.8;
+
             const use_transparency: bool = @hasField(PixelType, "a");
 
             if (@hasField(PixelType, "r"))
-                self.pixels[index].r = if (use_transparency) 0.8 else c;
+                self.pixels[index].r = if (use_transparency) t else c;
 
             if (@hasField(PixelType, "g"))
-                self.pixels[index].g = if (use_transparency) 0.8 else c;
+                self.pixels[index].g = if (use_transparency) t else c;
 
             if (@hasField(PixelType, "b"))
-                self.pixels[index].b = if (use_transparency) 0.8 else c;
+                self.pixels[index].b = if (use_transparency) t else c;
 
             if (use_transparency) {
                 self.pixels[index].a = c;
@@ -1105,7 +1156,7 @@ fn combineIntersectionLists(
     }
 
     // Make sure all 2 point intersections are at the end
-    std.sort.sort(IntersectionConnection, connection_list.toSliceMut(), {}, intersectionConnectionLessThan);
+    std.sort.insertion(IntersectionConnection, connection_list.toSliceMut(), {}, intersectionConnectionLessThan);
 
     return connection_list;
 }

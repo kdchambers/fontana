@@ -94,11 +94,11 @@ pub const OffsetSubtable = struct {
     pub fn fromBigEndianBytes(bytes: *align(4) [@sizeOf(OffsetSubtable)]u8) @This() {
         var result = @as(*OffsetSubtable, @ptrCast(bytes)).*;
 
-        result.scaler_type = toNative(u32, result.scaler_type, .Big);
-        result.tables_count = toNative(u16, result.tables_count, .Big);
-        result.search_range = toNative(u16, result.search_range, .Big);
-        result.entry_selector = toNative(u16, result.entry_selector, .Big);
-        result.range_shift = toNative(u16, result.range_shift, .Big);
+        result.scaler_type = toNative(u32, result.scaler_type, .big);
+        result.tables_count = toNative(u16, result.tables_count, .big);
+        result.search_range = toNative(u16, result.search_range, .big);
+        result.entry_selector = toNative(u16, result.entry_selector, .big);
+        result.range_shift = toNative(u16, result.range_shift, .big);
 
         return result;
     }
@@ -133,8 +133,8 @@ pub const TableDirectory = struct {
         // return null;
         // }
 
-        result.length = toNative(u32, result.length, .Big);
-        result.offset = toNative(u32, result.offset, .Big);
+        result.length = toNative(u32, result.length, .big);
+        result.offset = toNative(u32, result.offset, .big);
 
         return result;
     }
@@ -254,7 +254,7 @@ pub const CMAPSubtable = extern struct {
     pub fn fromBigEndianBytes(bytes: []u8) ?CMAPSubtable {
         var table: CMAPSubtable = undefined;
 
-        const platform_id_u16 = toNative(u16, @as(*u16, @ptrCast(@alignCast(bytes.ptr))).*, .Big);
+        const platform_id_u16 = toNative(u16, @as(*u16, @ptrCast(@alignCast(bytes.ptr))).*, .big);
 
         if (platform_id_u16 > @intFromEnum(CMAPPlatformID.microsoft)) {
             std.log.warn("Invalid platform ID '{d}' parsed from CMAP subtable", .{platform_id_u16});
@@ -263,9 +263,9 @@ pub const CMAPSubtable = extern struct {
 
         table.platform_id = @as(CMAPPlatformID, @enumFromInt(platform_id_u16));
 
-        table.offset = toNative(u32, @as(*u32, @ptrCast(@alignCast(&bytes.ptr[4]))).*, .Big);
+        table.offset = toNative(u32, @as(*u32, @ptrCast(@alignCast(&bytes.ptr[4]))).*, .big);
 
-        const platform_specific_id_u16 = toNative(u16, @as(*u16, @ptrCast(@alignCast(&bytes.ptr[2]))).*, .Big);
+        const platform_specific_id_u16 = toNative(u16, @as(*u16, @ptrCast(@alignCast(&bytes.ptr[2]))).*, .big);
 
         switch (table.platform_id) {
             .unicode => {
@@ -422,13 +422,13 @@ fn coverageIndexForGlyphID(coverage: []const u8, target_glyph_id: u16) !?u16 {
         .pos = 0,
     };
     var reader = fixed_buffer_stream.reader();
-    const coverage_format = try reader.readIntBig(u16);
+    const coverage_format = try reader.readInt(u16, .big);
     switch (coverage_format) {
         1 => {
-            const glyph_count = try reader.readIntBig(u16);
+            const glyph_count = try reader.readInt(u16, .big);
             var i: usize = 0;
             while (i < glyph_count) : (i += 1) {
-                const glyph_id = try reader.readIntBig(u16);
+                const glyph_id = try reader.readInt(u16, .big);
                 if (glyph_id == target_glyph_id) {
                     return @as(u16, @intCast(i));
                 }
@@ -436,12 +436,12 @@ fn coverageIndexForGlyphID(coverage: []const u8, target_glyph_id: u16) !?u16 {
         },
         2 => {
             std.debug.assert(false);
-            const range_count = try reader.readIntBig(u16);
+            const range_count = try reader.readInt(u16, .big);
             var i: usize = 0;
             while (i < range_count) : (i += 1) {
-                const glyph_start = try reader.readIntBig(u16);
-                const glyph_end = try reader.readIntBig(u16);
-                const base_coverage_index = try reader.readIntBig(u16);
+                const glyph_start = try reader.readInt(u16, .big);
+                const glyph_end = try reader.readInt(u16, .big);
+                const base_coverage_index = try reader.readInt(u16, .big);
                 if (target_glyph_id >= glyph_start and target_glyph_id <= glyph_end) {
                     return @as(u16, @intCast(base_coverage_index + (i - glyph_start)));
                 }
@@ -478,14 +478,14 @@ const ValueRecord = extern struct {
 
     pub fn read(reader: anytype) !ValueRecord {
         var value_record: ValueRecord = undefined;
-        value_record.x_placement = try reader.readIntBig(i16);
-        value_record.y_placement = try reader.readIntBig(i16);
-        value_record.x_advance = try reader.readIntBig(i16);
-        value_record.y_advance = try reader.readIntBig(i16);
-        value_record.x_placement_device_offset = try reader.readIntBig(u16);
-        value_record.y_placement_device_offset = try reader.readIntBig(u16);
-        value_record.x_advance_device_offset = try reader.readIntBig(u16);
-        value_record.y_advance_device_offset = try reader.readIntBig(u16);
+        value_record.x_placement = try reader.readInt(i16, .big);
+        value_record.y_placement = try reader.readInt(i16, .big);
+        value_record.x_advance = try reader.readInt(i16, .big);
+        value_record.y_advance = try reader.readInt(i16, .big);
+        value_record.x_placement_device_offset = try reader.readInt(u16, .big);
+        value_record.y_placement_device_offset = try reader.readInt(u16, .big);
+        value_record.x_advance_device_offset = try reader.readInt(u16, .big);
+        value_record.y_advance_device_offset = try reader.readInt(u16, .big);
         return value_record;
     }
 };
@@ -497,28 +497,28 @@ fn getClassForGlyph(class_table_data: []const u8, glyph_index: u32) !u16 {
     };
     var reader = fixed_buffer_stream.reader();
 
-    const pos_format = try reader.readIntBig(u16);
+    const pos_format = try reader.readInt(u16);
     std.debug.assert(pos_format == 1 or pos_format == 2);
     switch (pos_format) {
         1 => {
-            const start_glyph_id = try reader.readIntBig(u16);
-            const glyph_count = try reader.readIntBig(u16);
+            const start_glyph_id = try reader.readInt(u16, .big);
+            const glyph_count = try reader.readInt(u16, .big);
             try reader.skipBytes(start_glyph_id * @sizeOf(u16), .{});
             var x: usize = 0;
             while (x < glyph_count) : (x += 1) {
-                const current_glyph_index = try reader.readIntBig(u16);
+                const current_glyph_index = try reader.readInt(u16, .big);
                 if (current_glyph_index == glyph_index) {
                     return @as(u16, @intCast(x));
                 }
             }
         },
         2 => {
-            const class_range_count = try reader.readIntBig(u16);
+            const class_range_count = try reader.readInt(u16, .big);
             var x: usize = 0;
             while (x < class_range_count) : (x += 1) {
-                const start_glyph_id = try reader.readIntBig(u16);
-                const end_glyph_id = try reader.readIntBig(u16);
-                const class = try reader.readIntBig(u16);
+                const start_glyph_id = try reader.readInt(u16, .big);
+                const end_glyph_id = try reader.readInt(u16, .big);
+                const class = try reader.readInt(u16, .big);
                 if (glyph_index >= start_glyph_id and glyph_index <= end_glyph_id) {
                     return class;
                 }
@@ -566,22 +566,22 @@ pub fn kernAdvanceGpos(
     };
     var reader = fixed_buffer_stream.reader();
 
-    const version_major = try reader.readIntBig(i16);
-    const version_minor = try reader.readIntBig(i16);
-    const script_list_offset = (try reader.readIntBig(u16)) + font.gpos.offset;
-    const feature_list_offset = try reader.readIntBig(u16);
-    const lookup_list_offset = try reader.readIntBig(u16);
+    const version_major = try reader.readInt(i16, .big);
+    const version_minor = try reader.readInt(i16, .big);
+    const script_list_offset = (try reader.readInt(u16, .big)) + font.gpos.offset;
+    const feature_list_offset = try reader.readInt(u16, .big);
+    const lookup_list_offset = try reader.readInt(u16, .big);
 
     _ = feature_list_offset;
 
     std.debug.assert(version_major == 1 and (version_minor == 0 or version_minor == 1));
 
     if (version_minor == 1) {
-        _ = try reader.readIntBig(u32); // feature variation offset
+        _ = try reader.readInt(u32, .big); // feature variation offset
     }
 
     try fixed_buffer_stream.seekTo(script_list_offset);
-    const script_count = try reader.readIntBig(u16);
+    const script_count = try reader.readInt(u16, .big);
     var previous_offset: usize = undefined;
     var selected_lang_offset: u16 = 0;
 
@@ -589,12 +589,12 @@ pub fn kernAdvanceGpos(
     while (i < script_count) : (i += 1) {
         var tag: [4]u8 = undefined;
         _ = try reader.read(&tag);
-        const offset = try reader.readIntBig(u16);
+        const offset = try reader.readInt(u16, .big);
         previous_offset = try fixed_buffer_stream.getPos();
         try fixed_buffer_stream.seekTo(script_list_offset + offset);
 
-        const default_lang_offset = try reader.readIntBig(u16);
-        const lang_count = try reader.readIntBig(u16);
+        const default_lang_offset = try reader.readInt(u16, .big);
+        const lang_count = try reader.readInt(u16, .big);
         _ = lang_count;
         if (std.mem.eql(u8, "DFLT", &tag)) {
             selected_lang_offset = default_lang_offset + offset;
@@ -608,9 +608,9 @@ pub fn kernAdvanceGpos(
     }
 
     try fixed_buffer_stream.seekTo(script_list_offset + selected_lang_offset);
-    const lookup_order_offset = try reader.readIntBig(u16);
-    const required_feature_index = try reader.readIntBig(u16);
-    const feature_index_count = try reader.readIntBig(u16);
+    const lookup_order_offset = try reader.readInt(u16, .big);
+    const required_feature_index = try reader.readInt(u16, .big);
+    const feature_index_count = try reader.readInt(u16, .big);
 
     _ = required_feature_index;
     _ = feature_index_count;
@@ -621,13 +621,13 @@ pub fn kernAdvanceGpos(
     // https://learn.microsoft.com/en-us/typography/opentype/spec/chapter2#lookup-list-table
     //
     try fixed_buffer_stream.seekTo(font.gpos.offset + lookup_list_offset);
-    const lookup_entry_count = try reader.readIntBig(u16);
+    const lookup_entry_count = try reader.readInt(u16, .big);
 
     i = 0;
     var lookup_table_offset: u32 = 0;
     const subtable_count: u16 = blk: {
         while (i < lookup_entry_count) : (i += 1) {
-            const lookup_offset = try reader.readIntBig(u16);
+            const lookup_offset = try reader.readInt(u16, .big);
             lookup_table_offset = font.gpos.offset + lookup_list_offset + lookup_offset;
             const saved_offset = try fixed_buffer_stream.getPos();
             //
@@ -635,9 +635,9 @@ pub fn kernAdvanceGpos(
             // https://learn.microsoft.com/en-us/typography/opentype/spec/chapter2#lookup-table
             //
             try fixed_buffer_stream.seekTo(lookup_table_offset);
-            const lookup_type = try reader.readEnum(GPosLookupType, .Big);
-            _ = try reader.readIntBig(u16); // lookup_flag
-            const count = try reader.readIntBig(u16);
+            const lookup_type = try reader.readEnum(GPosLookupType, .big);
+            _ = try reader.readInt(u16, .big); // lookup_flag
+            const count = try reader.readInt(u16, .big);
             if (lookup_type == .pair_adjustment) {
                 break :blk count;
             }
@@ -652,20 +652,20 @@ pub fn kernAdvanceGpos(
     const left_glyph_index = findGlyphIndex(font, left_codepoint);
     i = 0;
     subtable_loop: while (i < subtable_count) : (i += 1) {
-        const subtable_offset = try reader.readIntBig(u16);
+        const subtable_offset = try reader.readInt(u16, .big);
         subtable_offset_absolute = lookup_table_offset + subtable_offset;
         const saved_lookup_offset = try fixed_buffer_stream.getPos();
         try fixed_buffer_stream.seekTo(subtable_offset_absolute);
-        const pos_format = try reader.readIntBig(u16);
-        const coverage_offset = try reader.readIntBig(u16);
+        const pos_format = try reader.readInt(u16, .big);
+        const coverage_offset = try reader.readInt(u16, .big);
         const coverage_offset_absolute = coverage_offset + subtable_offset_absolute;
         const coverage_slice = font.data[coverage_offset_absolute..font.data_len];
         switch (pos_format) {
             1 => {
                 if (try coverageIndexForGlyphID(coverage_slice, @as(u16, @intCast(left_glyph_index)))) |coverage_index| {
-                    const value_format_1 = try reader.readIntBig(u16);
-                    const value_format_2 = try reader.readIntBig(u16);
-                    const pair_set_count = try reader.readIntBig(u16);
+                    const value_format_1 = try reader.readInt(u16, .big);
+                    const value_format_2 = try reader.readInt(u16, .big);
+                    const pair_set_count = try reader.readInt(u16, .big);
                     _ = pair_set_count;
 
                     // TODO: Support more format types
@@ -674,17 +674,17 @@ pub fn kernAdvanceGpos(
                     // Jump to pairSetOffset[coverage_index]
                     try reader.skipBytes(coverage_index * @sizeOf(u16), .{});
 
-                    const pair_set_offset = try reader.readIntBig(u16);
+                    const pair_set_offset = try reader.readInt(u16, .big);
                     try fixed_buffer_stream.seekTo(subtable_offset_absolute + pair_set_offset);
 
-                    const pair_value_count = try reader.readIntBig(u16);
+                    const pair_value_count = try reader.readInt(u16, .big);
                     const saved_pairlist_offset = try fixed_buffer_stream.getPos();
 
                     const right_glyph_index = findGlyphIndex(font, right_codepoint);
                     i = 0;
                     while (i < pair_value_count) : (i += 1) {
-                        const right_glyph_id = try reader.readIntBig(u16);
-                        const advance_x = try reader.readIntBig(i16);
+                        const right_glyph_id = try reader.readInt(u16, .big);
+                        const advance_x = try reader.readInt(i16, .big);
                         if (right_glyph_id == right_glyph_index) {
                             return advance_x;
                         }
@@ -694,22 +694,22 @@ pub fn kernAdvanceGpos(
                 }
             },
             2 => {
-                const value_format_1 = try reader.readIntBig(u16);
-                const value_format_2 = try reader.readIntBig(u16);
+                const value_format_1 = try reader.readInt(u16, .big);
+                const value_format_2 = try reader.readInt(u16, .big);
                 // TODO: Support more format types
                 std.debug.assert(value_format_1 == 4);
                 std.debug.assert(value_format_2 == 0);
-                const classdef_offset_1 = try reader.readIntBig(u16);
-                const classdef_offset_2 = try reader.readIntBig(u16);
-                const class_count_1 = try reader.readIntBig(u16);
+                const classdef_offset_1 = try reader.readInt(u16, .big);
+                const classdef_offset_2 = try reader.readInt(u16, .big);
+                const class_count_1 = try reader.readInt(u16, .big);
                 _ = class_count_1;
-                const class_count_2 = try reader.readIntBig(u16);
+                const class_count_2 = try reader.readInt(u16, .big);
                 const class_index_1 = try getClassForGlyph(font.data[subtable_offset_absolute + classdef_offset_1 .. font.data_len], left_glyph_index);
                 const saved_offset = try fixed_buffer_stream.getPos();
                 const right_glyph_index = findGlyphIndex(font, right_codepoint);
                 const class_index_2 = try getClassForGlyph(font.data[subtable_offset_absolute + classdef_offset_2 .. font.data_len], right_glyph_index);
                 try reader.skipBytes((class_index_2 + (class_index_1 * class_count_2)) * @sizeOf(u16), .{});
-                const advance_x = try reader.readIntBig(i16);
+                const advance_x = try reader.readInt(i16, .big);
                 if (advance_x != 0) {
                     return advance_x;
                 }
@@ -737,22 +737,22 @@ pub fn generateKernPairsFromGpos(
     };
     var reader = fixed_buffer_stream.reader();
 
-    const version_major = try reader.readIntBig(i16);
-    const version_minor = try reader.readIntBig(i16);
-    const script_list_offset = (try reader.readIntBig(u16)) + font.gpos.offset;
-    const feature_list_offset = try reader.readIntBig(u16);
-    const lookup_list_offset = try reader.readIntBig(u16);
+    const version_major = try reader.readInt(i16, .big);
+    const version_minor = try reader.readInt(i16, .big);
+    const script_list_offset = (try reader.readInt(u16, .big)) + font.gpos.offset;
+    const feature_list_offset = try reader.readInt(u16, .big);
+    const lookup_list_offset = try reader.readInt(u16, .big);
 
     _ = feature_list_offset;
 
     std.debug.assert(version_major == 1 and (version_minor == 0 or version_minor == 1));
 
     if (version_minor == 1) {
-        _ = try reader.readIntBig(u32); // feature variation offset
+        _ = try reader.readInt(u32, .big); // feature variation offset
     }
 
     try fixed_buffer_stream.seekTo(script_list_offset);
-    const script_count = try reader.readIntBig(u16);
+    const script_count = try reader.readInt(u16, .big);
     var previous_offset: usize = undefined;
     var selected_lang_offset: u16 = 0;
 
@@ -760,12 +760,12 @@ pub fn generateKernPairsFromGpos(
     while (i < script_count) : (i += 1) {
         var tag: [4]u8 = undefined;
         _ = try reader.read(&tag);
-        const offset = try reader.readIntBig(u16);
+        const offset = try reader.readInt(u16, .big);
         previous_offset = try fixed_buffer_stream.getPos();
         try fixed_buffer_stream.seekTo(script_list_offset + offset);
 
-        const default_lang_offset = try reader.readIntBig(u16);
-        const lang_count = try reader.readIntBig(u16);
+        const default_lang_offset = try reader.readInt(u16, .big);
+        const lang_count = try reader.readInt(u16, .big);
         _ = lang_count;
         if (std.mem.eql(u8, "DFLT", &tag)) {
             selected_lang_offset = default_lang_offset + offset;
@@ -779,9 +779,9 @@ pub fn generateKernPairsFromGpos(
     }
 
     try fixed_buffer_stream.seekTo(script_list_offset + selected_lang_offset);
-    const lookup_order_offset = try reader.readIntBig(u16);
-    const required_feature_index = try reader.readIntBig(u16);
-    const feature_index_count = try reader.readIntBig(u16);
+    const lookup_order_offset = try reader.readInt(u16, .big);
+    const required_feature_index = try reader.readInt(u16, .big);
+    const feature_index_count = try reader.readInt(u16, .big);
 
     _ = required_feature_index;
     _ = feature_index_count;
@@ -792,13 +792,13 @@ pub fn generateKernPairsFromGpos(
     // https://learn.microsoft.com/en-us/typography/opentype/spec/chapter2#lookup-list-table
     //
     try fixed_buffer_stream.seekTo(font.gpos.offset + lookup_list_offset);
-    const lookup_entry_count = try reader.readIntBig(u16);
+    const lookup_entry_count = try reader.readInt(u16, .big);
 
     i = 0;
     var lookup_table_offset: u32 = 0;
     const subtable_count: u16 = blk: {
         while (i < lookup_entry_count) : (i += 1) {
-            const lookup_offset = try reader.readIntBig(u16);
+            const lookup_offset = try reader.readInt(u16, .big);
             lookup_table_offset = font.gpos.offset + lookup_list_offset + lookup_offset;
             const saved_offset = try fixed_buffer_stream.getPos();
             //
@@ -806,9 +806,9 @@ pub fn generateKernPairsFromGpos(
             // https://learn.microsoft.com/en-us/typography/opentype/spec/chapter2#lookup-table
             //
             try fixed_buffer_stream.seekTo(lookup_table_offset);
-            const lookup_type = try reader.readEnum(GPosLookupType, .Big);
-            _ = try reader.readIntBig(u16); // lookup_flag
-            const count = try reader.readIntBig(u16);
+            const lookup_type = try reader.readEnum(GPosLookupType, .big);
+            _ = try reader.readInt(u16, .big); // lookup_flag
+            const count = try reader.readInt(u16, .big);
             if (lookup_type == .pair_adjustment) {
                 break :blk count;
             }
@@ -831,20 +831,20 @@ pub fn generateKernPairsFromGpos(
         const left_glyph_index = findGlyphIndex(font, left_codepoint);
         i = 0;
         subtable_loop: while (i < subtable_count) : (i += 1) {
-            const subtable_offset = try reader.readIntBig(u16);
+            const subtable_offset = try reader.readInt(u16, .big);
             subtable_offset_absolute = lookup_table_offset + subtable_offset;
             const saved_lookup_offset = try fixed_buffer_stream.getPos();
             try fixed_buffer_stream.seekTo(subtable_offset_absolute);
-            const pos_format = try reader.readIntBig(u16);
-            const coverage_offset = try reader.readIntBig(u16);
+            const pos_format = try reader.readInt(u16, .big);
+            const coverage_offset = try reader.readInt(u16, .big);
             const coverage_offset_absolute = coverage_offset + subtable_offset_absolute;
             const coverage_slice = font.data[coverage_offset_absolute..font.data_len];
             switch (pos_format) {
                 1 => {
                     if (try coverageIndexForGlyphID(coverage_slice, @as(u16, @intCast(left_glyph_index)))) |coverage_index| {
-                        const value_format_1 = try reader.readIntBig(u16);
-                        const value_format_2 = try reader.readIntBig(u16);
-                        const pair_set_count = try reader.readIntBig(u16);
+                        const value_format_1 = try reader.readInt(u16, .big);
+                        const value_format_2 = try reader.readInt(u16, .big);
+                        const pair_set_count = try reader.readInt(u16, .big);
                         _ = pair_set_count;
 
                         // TODO: Support more format types
@@ -853,18 +853,18 @@ pub fn generateKernPairsFromGpos(
                         // Jump to pairSetOffset[coverage_index]
                         try reader.skipBytes(coverage_index * @sizeOf(u16), .{});
 
-                        const pair_set_offset = try reader.readIntBig(u16);
+                        const pair_set_offset = try reader.readInt(u16, .big);
                         try fixed_buffer_stream.seekTo(subtable_offset_absolute + pair_set_offset);
 
-                        const pair_value_count = try reader.readIntBig(u16);
+                        const pair_value_count = try reader.readInt(u16, .big);
                         const saved_pairlist_offset = try fixed_buffer_stream.getPos();
 
                         second_glyph_loop: for (codepoints) |right_codepoint| {
                             const right_glyph_index = findGlyphIndex(font, right_codepoint);
                             i = 0;
                             while (i < pair_value_count) : (i += 1) {
-                                const right_glyph_id = try reader.readIntBig(u16);
-                                const advance_x = try reader.readIntBig(i16);
+                                const right_glyph_id = try reader.readInt(u16, .big);
+                                const advance_x = try reader.readInt(i16, .big);
                                 if (right_glyph_id == right_glyph_index) {
                                     kern_pairs[kern_count] = .{
                                         .left_codepoint = left_codepoint,
@@ -882,23 +882,23 @@ pub fn generateKernPairsFromGpos(
                     }
                 },
                 2 => {
-                    const value_format_1 = try reader.readIntBig(u16);
-                    const value_format_2 = try reader.readIntBig(u16);
+                    const value_format_1 = try reader.readInt(u16, .big);
+                    const value_format_2 = try reader.readInt(u16, .big);
                     // TODO: Support more format types
                     std.debug.assert(value_format_1 == 4);
                     std.debug.assert(value_format_2 == 0);
-                    const classdef_offset_1 = try reader.readIntBig(u16);
-                    const classdef_offset_2 = try reader.readIntBig(u16);
-                    const class_count_1 = try reader.readIntBig(u16);
+                    const classdef_offset_1 = try reader.readInt(u16, .big);
+                    const classdef_offset_2 = try reader.readInt(u16, .big);
+                    const class_count_1 = try reader.readInt(u16, .big);
                     _ = class_count_1;
-                    const class_count_2 = try reader.readIntBig(u16);
+                    const class_count_2 = try reader.readInt(u16, .big);
                     const class_index_1 = try getClassForGlyph(font.data[subtable_offset_absolute + classdef_offset_1 .. font.data_len], left_glyph_index);
                     const saved_offset = try fixed_buffer_stream.getPos();
                     for (codepoints) |right_codepoint| {
                         const right_glyph_index = findGlyphIndex(font, right_codepoint);
                         const class_index_2 = try getClassForGlyph(font.data[subtable_offset_absolute + classdef_offset_2 .. font.data_len], right_glyph_index);
                         try reader.skipBytes((class_index_2 + (class_index_1 * class_count_2)) * @sizeOf(u16), .{});
-                        const advance_x = try reader.readIntBig(i16);
+                        const advance_x = try reader.readInt(i16, .big);
                         if (advance_x != 0) {
                             kern_pairs[kern_count] = .{
                                 .left_codepoint = left_codepoint,
@@ -942,11 +942,11 @@ pub fn parseFromBytes(font_data: []const u8) !FontInfo {
         var fixed_buffer_stream = std.io.FixedBufferStream([]const u8){ .buffer = font_data, .pos = 0 };
         var reader = fixed_buffer_stream.reader();
 
-        const scaler_type = try reader.readIntBig(u32);
-        const tables_count = try reader.readIntBig(u16);
-        const search_range = try reader.readIntBig(u16);
-        const entry_selector = try reader.readIntBig(u16);
-        const range_shift = try reader.readIntBig(u16);
+        const scaler_type = try reader.readInt(u32, .big);
+        const tables_count = try reader.readInt(u16, .big);
+        const search_range = try reader.readInt(u16, .big);
+        const entry_selector = try reader.readInt(u16, .big);
+        const range_shift = try reader.readInt(u16, .big);
 
         _ = scaler_type;
         _ = search_range;
@@ -961,11 +961,11 @@ pub fn parseFromBytes(font_data: []const u8) !FontInfo {
             var tag_buffer: [4]u8 = undefined;
             var tag = tag_buffer[0..];
             _ = try reader.readAll(tag[0..]);
-            const checksum = try reader.readIntBig(u32);
+            const checksum = try reader.readInt(u32, .big);
             // TODO: Use checksum
             _ = checksum;
-            const offset = try reader.readIntBig(u32);
-            const length = try reader.readIntBig(u32);
+            const offset = try reader.readInt(u32, .big);
+            const length = try reader.readInt(u32, .big);
 
             if (is_debug) {
                 std.debug.print("  {s}\n", .{tag});
@@ -1078,18 +1078,18 @@ pub fn parseFromBytes(font_data: []const u8) !FontInfo {
         };
         var reader = fixed_buffer_stream.reader();
 
-        const version = try reader.readIntBig(u16);
+        const version = try reader.readInt(u16, .big);
         _ = version;
         try reader.skipBytes(66, .{});
 
-        font_info.ascender = try reader.readIntBig(i16);
-        font_info.descender = try reader.readIntBig(i16);
-        font_info.line_gap = try reader.readIntBig(i16);
+        font_info.ascender = try reader.readInt(i16, .big);
+        font_info.descender = try reader.readInt(i16, .big);
+        font_info.line_gap = try reader.readInt(i16, .big);
 
         try reader.skipBytes(16, .{});
 
-        font_info.default_char = try reader.readIntBig(u16);
-        font_info.break_char = try reader.readIntBig(u16);
+        font_info.default_char = try reader.readInt(u16, .big);
+        font_info.break_char = try reader.readInt(u16, .big);
     }
 
     {
@@ -1097,11 +1097,11 @@ pub fn parseFromBytes(font_data: []const u8) !FontInfo {
 
         var fixed_buffer_stream = std.io.FixedBufferStream([]const u8){ .buffer = font_data, .pos = data_sections.maxp.offset };
         var reader = fixed_buffer_stream.reader();
-        const version_major = try reader.readIntBig(i16);
-        const version_minor = try reader.readIntBig(i16);
+        const version_major = try reader.readInt(i16, .big);
+        const version_minor = try reader.readInt(i16, .big);
         _ = version_major;
         _ = version_minor;
-        font_info.glyph_count = try reader.readIntBig(u16);
+        font_info.glyph_count = try reader.readInt(u16, .big);
     }
 
     var head: Head = undefined;
@@ -1109,12 +1109,12 @@ pub fn parseFromBytes(font_data: []const u8) !FontInfo {
         var fixed_buffer_stream = std.io.FixedBufferStream([]const u8){ .buffer = font_data, .pos = data_sections.head.offset };
         var reader = fixed_buffer_stream.reader();
 
-        head.version_major = try reader.readIntBig(i16);
-        head.version_minor = try reader.readIntBig(i16);
-        head.font_revision_major = try reader.readIntBig(i16);
-        head.font_revision_minor = try reader.readIntBig(i16);
-        head.checksum_adjustment = try reader.readIntBig(u32);
-        head.magic_number = try reader.readIntBig(u32);
+        head.version_major = try reader.readInt(i16, .big);
+        head.version_minor = try reader.readInt(i16, .big);
+        head.font_revision_major = try reader.readInt(i16, .big);
+        head.font_revision_minor = try reader.readInt(i16, .big);
+        head.checksum_adjustment = try reader.readInt(u32, .big);
+        head.magic_number = try reader.readInt(u32, .big);
 
         if (head.magic_number != 0x5F0F3CF5) {
             std.log.warn("Magic number not set to 0x5F0F3CF5. File might be corrupt", .{});
@@ -1122,25 +1122,25 @@ pub fn parseFromBytes(font_data: []const u8) !FontInfo {
 
         head.flags = try reader.readStruct(Head.Flags);
 
-        font_info.units_per_em = try reader.readIntBig(u16);
-        head.created_timestamp = try reader.readIntBig(i64);
-        head.modified_timestamp = try reader.readIntBig(i64);
+        font_info.units_per_em = try reader.readInt(u16, .big);
+        head.created_timestamp = try reader.readInt(i64, .big);
+        head.modified_timestamp = try reader.readInt(i64, .big);
 
-        head.x_min = try reader.readIntBig(i16);
-        head.y_min = try reader.readIntBig(i16);
-        head.x_max = try reader.readIntBig(i16);
-        head.y_max = try reader.readIntBig(i16);
+        head.x_min = try reader.readInt(i16, .big);
+        head.y_min = try reader.readInt(i16, .big);
+        head.x_max = try reader.readInt(i16, .big);
+        head.y_max = try reader.readInt(i16, .big);
 
         std.debug.assert(head.x_min <= head.x_max);
         std.debug.assert(head.y_min <= head.y_max);
 
         head.mac_style = try reader.readStruct(Head.MacStyle);
 
-        head.lowest_rec_ppem = try reader.readIntBig(u16);
+        head.lowest_rec_ppem = try reader.readInt(u16, .big);
 
-        head.font_direction_hint = try reader.readIntBig(i16);
-        head.index_to_loc_format = try reader.readIntBig(i16);
-        head.glyph_data_format = try reader.readIntBig(i16);
+        head.font_direction_hint = try reader.readInt(i16, .big);
+        head.index_to_loc_format = try reader.readInt(i16, .big);
+        head.glyph_data_format = try reader.readInt(i16, .big);
 
         font_info.index_to_loc_format = head.index_to_loc_format;
 
@@ -1156,8 +1156,8 @@ pub fn parseFromBytes(font_data: []const u8) !FontInfo {
         };
         var reader = fixed_buffer_stream.reader();
 
-        const version = try reader.readIntBig(u16);
-        const subtable_count = try reader.readIntBig(u16);
+        const version = try reader.readInt(u16, .big);
+        const subtable_count = try reader.readInt(u16, .big);
 
         _ = version;
 
@@ -1167,15 +1167,15 @@ pub fn parseFromBytes(font_data: []const u8) !FontInfo {
                 std.debug.assert(@sizeOf(CMAPPlatformID) == 2);
                 std.debug.assert(@sizeOf(CMAPPlatformSpecificID) == 2);
             }
-            const platform_id = try reader.readEnum(CMAPPlatformID, .Big);
+            const platform_id = try reader.readEnum(CMAPPlatformID, .big);
             const platform_specific_id = blk: {
                 switch (platform_id) {
-                    .unicode => break :blk CMAPPlatformSpecificID{ .unicode = try reader.readEnum(CMAPPlatformSpecificID.Unicode, .Big) },
+                    .unicode => break :blk CMAPPlatformSpecificID{ .unicode = try reader.readEnum(CMAPPlatformSpecificID.Unicode, .big) },
                     else => return error.InvalidSpecificPlatformID,
                 }
             };
             _ = platform_specific_id;
-            const offset = try reader.readIntBig(u32);
+            const offset = try reader.readInt(u32, .big);
             std.log.info("Platform: {}", .{platform_id});
             if (platform_id == .unicode) break :outer data_sections.cmap.offset + offset;
         }
@@ -1190,7 +1190,7 @@ pub fn parseFromBytes(font_data: []const u8) !FontInfo {
         var reader = fixed_buffer_stream.reader();
 
         try reader.skipBytes(17 * @sizeOf(u16), .{});
-        font_info.horizonal_metrics_count = try reader.readIntBig(u16);
+        font_info.horizonal_metrics_count = try reader.readInt(u16, .big);
         std.debug.assert(font_info.horizonal_metrics_count > 0);
     }
 
@@ -1203,10 +1203,10 @@ pub fn parseFromBytes(font_data: []const u8) !FontInfo {
         const space_glyph_index = findGlyphIndex(&font_info, ' ');
         if (space_glyph_index < font_info.horizonal_metrics_count) {
             try reader.skipBytes(space_glyph_index * @sizeOf(u32), .{});
-            font_info.space_advance = @as(f32, @floatFromInt(try reader.readIntBig(u16)));
+            font_info.space_advance = @as(f32, @floatFromInt(try reader.readInt(u16, .big)));
         } else {
             try reader.skipBytes((font_info.horizonal_metrics_count - 1) * @sizeOf(u32), .{});
-            font_info.space_advance = @as(f32, @floatFromInt(try reader.readIntBig(u16)));
+            font_info.space_advance = @as(f32, @floatFromInt(try reader.readInt(u16, .big)));
         }
     }
 
@@ -1259,15 +1259,15 @@ pub fn findGlyphIndex(font_info: *const FontInfo, unicode_codepoint: i32) u32 {
     // TODO:
     std.debug.assert(format == 4);
 
-    const segcount = toNative(u16, @as(*u16, @ptrFromInt(base_index + 6)).*, .Big) >> 1;
-    var search_range = toNative(u16, @as(*u16, @ptrFromInt(base_index + 8)).*, .Big) >> 1;
-    var entry_selector = toNative(u16, @as(*u16, @ptrFromInt(base_index + 10)).*, .Big);
-    const range_shift = toNative(u16, @as(*u16, @ptrFromInt(base_index + 12)).*, .Big) >> 1;
+    const segcount = toNative(u16, @as(*u16, @ptrFromInt(base_index + 6)).*, .big) >> 1;
+    var search_range = toNative(u16, @as(*u16, @ptrFromInt(base_index + 8)).*, .big) >> 1;
+    var entry_selector = toNative(u16, @as(*u16, @ptrFromInt(base_index + 10)).*, .big);
+    const range_shift = toNative(u16, @as(*u16, @ptrFromInt(base_index + 12)).*, .big) >> 1;
 
     const end_count: u32 = encoding_offset + 14;
     var search: u32 = end_count;
 
-    if (unicode_codepoint >= toNative(u16, @as(*u16, @ptrFromInt(@intFromPtr(data.ptr) + search + (range_shift * 2))).*, .Big)) {
+    if (unicode_codepoint >= toNative(u16, @as(*u16, @ptrFromInt(@intFromPtr(data.ptr) + search + (range_shift * 2))).*, .big)) {
         search += range_shift * 2;
     }
 
@@ -1277,7 +1277,7 @@ pub fn findGlyphIndex(font_info: *const FontInfo, unicode_codepoint: i32) u32 {
         var end: u16 = undefined;
         search_range = search_range >> 1;
 
-        end = toNative(u16, @as(*u16, @ptrFromInt(@intFromPtr(data.ptr) + search + (search_range * 2))).*, .Big);
+        end = toNative(u16, @as(*u16, @ptrFromInt(@intFromPtr(data.ptr) + search + (search_range * 2))).*, .big);
 
         if (unicode_codepoint > end) {
             search += search_range * 2;
@@ -1292,8 +1292,8 @@ pub fn findGlyphIndex(font_info: *const FontInfo, unicode_codepoint: i32) u32 {
         var start: u16 = undefined;
         const item: u32 = (search - end_count) >> 1;
 
-        assert(unicode_codepoint <= toNative(u16, @as(*u16, @ptrFromInt(@intFromPtr(data.ptr) + end_count + (item * 2))).*, .Big));
-        start = toNative(u16, @as(*u16, @ptrFromInt(@intFromPtr(data.ptr) + encoding_offset + 14 + (segcount * 2) + 2 + (2 * item))).*, .Big);
+        assert(unicode_codepoint <= toNative(u16, @as(*u16, @ptrFromInt(@intFromPtr(data.ptr) + end_count + (item * 2))).*, .big));
+        start = toNative(u16, @as(*u16, @ptrFromInt(@intFromPtr(data.ptr) + encoding_offset + 14 + (segcount * 2) + 2 + (2 * item))).*, .big);
 
         if (unicode_codepoint < start) {
             // TODO: return error
@@ -1301,7 +1301,7 @@ pub fn findGlyphIndex(font_info: *const FontInfo, unicode_codepoint: i32) u32 {
             return 0;
         }
 
-        offset = toNative(u16, @as(*u16, @ptrFromInt(@intFromPtr(data.ptr) + encoding_offset + 14 + (segcount * 6) + 2 + (item * 2))).*, .Big);
+        offset = toNative(u16, @as(*u16, @ptrFromInt(@intFromPtr(data.ptr) + encoding_offset + 14 + (segcount * 6) + 2 + (item * 2))).*, .big);
         if (offset == 0) {
             const base = bigToNative(i16, @as(*i16, @ptrFromInt(base_index + 14 + (segcount * 4) + 2 + (2 * item))).*);
             return @as(u32, @intCast(unicode_codepoint + base));
@@ -1312,7 +1312,7 @@ pub fn findGlyphIndex(font_info: *const FontInfo, unicode_codepoint: i32) u32 {
         const result_addr = @as(*u8, @ptrFromInt(result_addr_index));
         const result_addr_aligned = @as(*u16, @ptrCast(@alignCast(result_addr)));
 
-        return @as(u32, @intCast(toNative(u16, result_addr_aligned.*, .Big)));
+        return @as(u32, @intCast(toNative(u16, result_addr_aligned.*, .big)));
     }
 }
 

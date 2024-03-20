@@ -93,21 +93,23 @@ pub fn PenConfigInternal(comptime options: api.PenConfigOptionsInternal) type {
                 while (y < bitmap_height) : (y += 1) {
                     var x: usize = 0;
                     while (x < bitmap_width) : (x += 1) {
-                        const value = @as(f32, @floatFromInt(bitmap_pixels[x + (y * bitmap_width)])) / 255;
+                        const value: u8 = bitmap_pixels[x + (y * bitmap_width)];
                         const index: usize = (placement.x + x) + ((y + placement.y) * texture_size);
-                        // TODO: Detect type using comptime
-                        const use_transparency: bool = @hasField(types.Pixel, "a");
-                        if (@hasField(types.Pixel, "r"))
-                            texture_pixels[index].r = if (use_transparency) 0.8 else value;
-
-                        if (@hasField(types.Pixel, "g"))
-                            texture_pixels[index].g = if (use_transparency) 0.8 else value;
-
-                        if (@hasField(types.Pixel, "b"))
-                            texture_pixels[index].b = if (use_transparency) 0.8 else value;
-
-                        if (use_transparency) {
-                            texture_pixels[index].a = value;
+                        switch (comptime options.pixel_format) {
+                            .r8 => texture_pixels[index] = value,
+                            .r8g8b8a8 => {
+                                texture_pixels[index].r = 200;
+                                texture_pixels[index].g = 200;
+                                texture_pixels[index].b = 200;
+                                texture_pixels[index].a = value;
+                            },
+                            .r32g32b32a32 => {
+                                texture_pixels[index].r = 0.8;
+                                texture_pixels[index].g = 0.8;
+                                texture_pixels[index].b = 0.8;
+                                texture_pixels[index].a = @as(f32, @floatFromInt(value)) / 255.0;
+                            },
+                            else => unreachable,
                         }
                     }
                 }
@@ -134,7 +136,6 @@ pub fn PenConfigInternal(comptime options: api.PenConfigOptionsInternal) type {
                 self.points_per_pixel,
             );
             var cursor = placement;
-            const texture_width_height: f32 = @as(f32, @floatFromInt(self.atlas_ref.size));
             const face = self.backend_ref.face;
 
             const has_kerning = face.face_flags.kerning;
@@ -179,10 +180,10 @@ pub fn PenConfigInternal(comptime options: api.PenConfigOptionsInternal) type {
                 if (codepoint != ' ') {
                     const glyph_texture_extent = self.textureExtentFromCodepoint(codepoint);
                     const texture_extent = types.Extent2DNative{
-                        .x = @as(f32, @floatFromInt(glyph_texture_extent.x)) / texture_width_height,
-                        .y = @as(f32, @floatFromInt(glyph_texture_extent.y)) / texture_width_height,
-                        .width = @as(f32, @floatFromInt(glyph_texture_extent.width)) / texture_width_height,
-                        .height = @as(f32, @floatFromInt(glyph_texture_extent.height)) / texture_width_height,
+                        .x = @as(f32, @floatFromInt(glyph_texture_extent.x)),
+                        .y = @as(f32, @floatFromInt(glyph_texture_extent.y)),
+                        .width = @as(f32, @floatFromInt(glyph_texture_extent.width)),
+                        .height = @as(f32, @floatFromInt(glyph_texture_extent.height)),
                     };
                     const screen_extent = types.Extent2DNative{
                         .x = @as(f32, @floatCast(cursor.x + (x_offset * screen_scale.horizontal))) + leftside_bearing,
@@ -190,7 +191,7 @@ pub fn PenConfigInternal(comptime options: api.PenConfigOptionsInternal) type {
                         .width = @as(f32, @floatCast(@as(f64, @floatFromInt(glyph_texture_extent.width)) * screen_scale.horizontal)),
                         .height = @as(f32, @floatCast(@as(f64, @floatFromInt(glyph_texture_extent.height)) * screen_scale.vertical)),
                     };
-                    try writer_interface.write(screen_extent, texture_extent);
+                    cursor.x += writer_interface.write(screen_extent, texture_extent);
                 }
                 cursor.x += @as(f32, @floatCast(advance * screen_scale.horizontal));
                 previous_codepoint = codepoint;
@@ -211,7 +212,6 @@ pub fn PenConfigInternal(comptime options: api.PenConfigOptionsInternal) type {
                 self.points_per_pixel,
                 self.points_per_pixel,
             );
-            const texture_width_height: f32 = @as(f32, @floatFromInt(self.atlas_ref.size));
             const face = self.backend_ref.face;
 
             const RenderedTextMetrics = struct {
@@ -302,10 +302,10 @@ pub fn PenConfigInternal(comptime options: api.PenConfigOptionsInternal) type {
                 if (codepoint != ' ') {
                     const glyph_texture_extent = self.textureExtentFromCodepoint(codepoint);
                     const texture_extent = types.Extent2DNative{
-                        .x = @as(f32, @floatFromInt(glyph_texture_extent.x)) / texture_width_height,
-                        .y = @as(f32, @floatFromInt(glyph_texture_extent.y)) / texture_width_height,
-                        .width = @as(f32, @floatFromInt(glyph_texture_extent.width)) / texture_width_height,
-                        .height = @as(f32, @floatFromInt(glyph_texture_extent.height)) / texture_width_height,
+                        .x = @as(f32, @floatFromInt(glyph_texture_extent.x)),
+                        .y = @as(f32, @floatFromInt(glyph_texture_extent.y)),
+                        .width = @as(f32, @floatFromInt(glyph_texture_extent.width)),
+                        .height = @as(f32, @floatFromInt(glyph_texture_extent.height)),
                     };
                     const screen_extent = types.Extent2DNative{
                         .x = @as(f32, @floatCast(cursor.x + (x_offset * screen_scale.horizontal))) + leftside_bearing,
@@ -313,7 +313,7 @@ pub fn PenConfigInternal(comptime options: api.PenConfigOptionsInternal) type {
                         .width = @as(f32, @floatCast(@as(f64, @floatFromInt(glyph_texture_extent.width)) * screen_scale.horizontal)),
                         .height = @as(f32, @floatCast(@as(f64, @floatFromInt(glyph_texture_extent.height)) * screen_scale.vertical)),
                     };
-                    try writer_interface.write(screen_extent, texture_extent);
+                    cursor.x += writer_interface.write(screen_extent, texture_extent);
                 }
                 cursor.x += @as(f32, @floatCast(advance * screen_scale.horizontal));
                 previous_codepoint = codepoint;
@@ -359,6 +359,7 @@ pub fn FontConfig(comptime options: api.FontOptions) type {
                     .Coordinates2DNative = options.type_overrides.Coordinates2DNative,
                     .Scale2D = options.type_overrides.Scale2D,
                     .Pixel = PixelType,
+                    .Dimensions2DNative = options.type_overrides.Dimensions2DNative,
                 },
                 .BackendType = FontType,
                 .pixel_format = pen_options.pixel_format,
